@@ -166,18 +166,25 @@ class MFDataFetcher:
 
     @st.cache_data(ttl=43200, show_spinner=False)
     def get_benchmark_history(_self, ticker="^NSEI", start_date=None):
-        """Fetch benchmark history using yfinance."""
+        """Fetch benchmark history using yfinance with timezone normalization."""
         import yfinance as yf
 
         try:
             bench = yf.download(ticker, start=start_date, progress=False, auto_adjust=True)
             if bench.empty:
+                log_event(logger, "BENCHMARK_EMPTY", ticker=ticker, status="SUCCESS")
                 return pd.Series()
 
+            # yfinance 0.2.x can return MultiIndex: (Close, ^NSEI)
             close_data = bench["Close"]
             if isinstance(close_data, pd.DataFrame):
                 close_data = close_data.iloc[:, 0]
 
+            # Institutional-Grade Normalization: Force Timezone Naive
+            # AMFI data is naive, so we must match it for consistent joins.
+            close_data.index = pd.to_datetime(close_data.index).tz_localize(None)
+            
+            log_event(logger, "BENCHMARK_SYNC_SUCCESS", ticker=ticker, data_points=len(close_data))
             return close_data.squeeze()
         except Exception as e:
             log_event(logger, "BENCHMARK_FETCH_ERROR", level="error", ticker=ticker, error=str(e))

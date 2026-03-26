@@ -175,6 +175,11 @@ if selected_code:
                 else:
                     raw_bench_data = pd.Series()
 
+            if bench_type == "Index" and raw_bench_data.empty:
+                st.warning(f"⚠️ **Benchmark Connection Timeout**: Could not retrieve {benchmark_name} history. Only fund performance will be displayed.")
+            elif not raw_bench_data.empty:
+                log_event(logger, "BENCHMARK_LOADED", ticker=benchmark_name, status="SUCCESS")
+
             # 0. Initial App State
             if "app_init" not in st.session_state:
                 log_event(logger, "APP_LAUNCH", status="SUCCESS")
