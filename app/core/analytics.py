@@ -83,7 +83,7 @@ class MFAnalytics:
         if nav_series.empty or len(nav_series) < 2:
             return 0.0
 
-        returns = nav_series.pct_change().dropna()
+        returns = nav_series.pct_change(fill_method=None).dropna()
         if returns.empty:
             return 0.0
 
@@ -115,7 +115,7 @@ class MFAnalytics:
         if nav_series.empty or len(nav_series) < 2:
             return {}
 
-        returns = nav_series.pct_change().dropna()
+        returns = nav_series.pct_change(fill_method=None).dropna()
         if returns.empty:
             return {}
 
@@ -223,7 +223,7 @@ class MFAnalytics:
             return {"upside": 0.0, "downside": 0.0}
 
         # Monthly resampled returns
-        monthly_df = df.resample("ME").last().pct_change().dropna()
+        monthly_df = df.resample("ME").last().pct_change(fill_method=None).dropna()
 
         upside_bench = monthly_df[monthly_df["bench"] > 0]
         downside_bench = monthly_df[monthly_df["bench"] <= 0]
@@ -256,8 +256,8 @@ class MFAnalytics:
         if len(df) < 20:
             return {"alpha": 0.0, "beta": 0.0, "r_squared": 0.0}
 
-        f_ret = df["fund"].pct_change().dropna()
-        b_ret = df["bench"].pct_change().dropna()
+        f_ret = df["fund"].pct_change(fill_method=None).dropna()
+        b_ret = df["bench"].pct_change(fill_method=None).dropna()
 
         daily_rf = rf / 252
         f_excess = f_ret - daily_rf
@@ -293,7 +293,7 @@ class MFAnalytics:
             return pd.Series(dtype=float)
 
         yearly_nav = nav_series.resample("YE").last()
-        returns = yearly_nav.pct_change()
+        returns = yearly_nav.pct_change(fill_method=None)
 
         # Handle first year (possibly partial)
         if not yearly_nav.empty:

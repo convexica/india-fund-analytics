@@ -302,7 +302,7 @@ if selected_code:
                 ann_ret = (end_val / start_val) ** (1 / years) - 1
 
                 # Annualized Volatility
-                daily_rets = subset.pct_change().dropna()
+                daily_rets = subset.pct_change(fill_method=None).dropna()
                 ann_vol = daily_rets.std() * np.sqrt(252)
 
                 # Ratios & Capture if bench provided
@@ -346,7 +346,7 @@ if selected_code:
                     b_subset = raw_bench_data.loc[raw_bench_data.index >= b_target_date]
                     if len(b_subset) > 20:
                         b_ret = (b_subset.iloc[-1] / b_subset.iloc[0]) ** (1 / yrs) - 1
-                        b_vol = b_subset.pct_change().std() * np.sqrt(252)
+                        b_vol = b_subset.pct_change(fill_method=None).std() * np.sqrt(252)
                 except Exception:
                     pass
 
@@ -414,7 +414,7 @@ if selected_code:
             c1, c2 = st.columns([1.2, 1])
             with c1:
                 # Scatter Plot for Insight: Fund Monthly vs Benchmark Monthly
-                df_monthly = pd.DataFrame({"Fund": nav_data["nav"], "Bench": bench_data}).resample("ME").last().pct_change().dropna()
+                df_monthly = pd.DataFrame({"Fund": nav_data["nav"], "Bench": bench_data}).resample("ME").last().pct_change(fill_method=None).dropna()
                 fig_scatter = px.scatter(df_monthly, x="Bench", y="Fund", trendline="ols", title="Monthly Performance Sensitivity", labels={"Bench": f"{benchmark_name} Return", "Fund": "Fund Return"})
                 # Add diagonal y=x line
                 lims = [min(df_monthly.min()), max(df_monthly.max())]

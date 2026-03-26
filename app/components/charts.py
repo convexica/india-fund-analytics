@@ -41,7 +41,7 @@ def plot_drawdown(fund_drawdown, bench_drawdown=None, fund_name="Fund", bench_na
 
 def plot_returns_distribution(nav_df):
     """Plot distribution of daily returns."""
-    returns = nav_df["nav"].pct_change().dropna()
+    returns = nav_df["nav"].pct_change(fill_method=None).dropna()
     fig = px.histogram(returns, nbins=50, title="Daily Returns Distribution", labels={"value": "Daily Return"}, color_discrete_sequence=["#2ca02c"])
     fig.update_layout(template="plotly_white", showlegend=False, height=400)
     fig.update_xaxes(tickformat=".1%")
