@@ -3,6 +3,10 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import streamlit as st
+from core.logger import get_logger, log_event
+
+# Initialize professional logger
+logger = get_logger(__name__)
 
 
 class MFAnalytics:
@@ -305,7 +309,7 @@ class MFAnalytics:
     @st.cache_data(show_spinner=False)
     def calculate_rolling_return_profile(_self, nav_series: pd.Series) -> Dict[str, Any]:
         """Generate statistical profiles for standard rolling horizons."""
-        profile = {}
+        profile: Dict[str, Any] = {}
         horizons = {1: "1 Year", 3: "3 Years", 5: "5 Years"}
 
         for yrs, label in horizons.items():
@@ -326,3 +330,58 @@ class MFAnalytics:
                 "% times returns > 20%": (rolling >= 0.20).mean(),
             }
         return profile
+
+    def get_periodic_metrics(self, series: pd.Series, years: int, bench_series: Optional[pd.Series] = None) -> Tuple[Optional[float], Optional[float], Optional[Dict[str, float]]]:
+        """
+        Calculates performance and risk metrics for a specific multi-year window.
+        Moved from UI layer to Engine for SOLID architectural compliance.
+        """
+        if series.empty:
+            return None, None, None
+        try:
+            target_date = series.index[-1] - pd.DateOffset(years=years)
+            subset = series.loc[series.index >= target_date]
+            if len(subset) < 20:
+                return None, None, None
+
+            start_val = subset.iloc[0]
+            end_val = series.iloc[-1]
+            ann_ret = (end_val / start_val) ** (1 / years) - 1
+
+            # Annualized Volatility
+            daily_rets = subset.pct_change(fill_method=None).dropna()
+            ann_vol = daily_rets.std() * np.sqrt(252)
+
+            ratios = {}
+            if bench_series is not None and not bench_series.empty:
+                b_subset = bench_series.loc[bench_series.index >= target_date]
+                if len(b_subset) >= 20:
+                    ab = self.calculate_alpha_beta(subset, b_subset)
+                    rm = self.calculate_risk_metrics(subset)
+                    cap = self.calculate_capture_ratios(subset, b_subset)
+                    ratios = {
+                        "Alpha": ab["alpha"],
+                        "Beta": ab["beta"],
+                        "R-Squared": ab["r_squared"],
+                        "InfoRatio": ab.get("info_ratio", 0),
+                        "BattingAvg": ab.get("batting_average", 0),
+                        "Sharpe": rm.get("sharpe_ratio", 0),
+                        "Sortino": rm.get("sortino_ratio", 0),
+                        "DownsideDev": rm.get("downside_deviation", 0),
+                        "Calmar": rm.get("calmar_ratio", 0),
+                        "Omega": rm.get("omega_ratio", 0),
+                        "Hurst": rm.get("hurst_exponent", 0.5),
+                        "Upside": cap["upside"],
+                        "Downside": cap["downside"],
+                    }
+
+            return ann_ret, ann_vol, ratios
+        except Exception:
+            return None, None, None
+
+    def get_monthly_returns(self, fund_nav: pd.Series, bench_nav: pd.Series) -> pd.DataFrame:
+        """Alignment and resampling logic for monthly comparative returns."""
+        df = pd.DataFrame({"Fund": fund_nav, "Bench": bench_nav}).dropna()
+        if df.empty:
+            return pd.DataFrame()
+        return df.resample("ME").last().pct_change(fill_method=None).dropna()

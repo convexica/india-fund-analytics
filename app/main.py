@@ -1,5 +1,3 @@
-import logging
-
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -12,10 +10,10 @@ from components.charts import (
 )
 from core.analytics import MFAnalytics
 from core.data_fetcher import MFDataFetcher
+from core.logger import get_logger, log_event
 
-# Logging Configuration
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+# Initialize professional logger
+logger = get_logger(__name__)
 
 # Page Configuration
 st.set_page_config(page_title="India Fund Analytics", page_icon="📈", layout="wide")
@@ -140,7 +138,9 @@ with st.sidebar:
     st.markdown("---")
     # Technical Calibration (How)
     st.header("⚙️ Calibration")
-    risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, 5.3, 0.1) / 100
+    # Fetch real-time rate for initial calibration (fallback to 6.5)
+    default_rf = fetcher.get_current_risk_free_rate() * 100
+    risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, default_rf, 0.1) / 100
     analytics.rf = risk_free_rate
 
 # Main Content
@@ -175,6 +175,10 @@ if selected_code:
                 else:
                     raw_bench_data = pd.Series()
 
+            # 0. Initial App State
+            if "app_init" not in st.session_state:
+                log_event(logger, "APP_LAUNCH", status="SUCCESS")
+                st.session_state.app_init = True
             # Apply Time Period Filtering
             nav_data = raw_nav_data.copy()
             bench_data = raw_bench_data.copy() if not raw_bench_data.empty else pd.Series()
@@ -281,74 +285,16 @@ if selected_code:
             st.plotly_chart(fig_cal, width="stretch", key="calendar_year_chart")
 
         # Performance Analysis Data Prep
-        def get_stats_for_period(series, years, bench_series=None):
-            if series.empty:
-                return None, None, None
-
-            # Check if fund has enough history for the requested 'years'
-            total_days = (series.index[-1] - series.index[0]).days
-            if total_days < (years * 365 - 30):  # 30 day grace period for holidays/launch gaps
-                return None, None, None
-
-            target_date = series.index[-1] - pd.DateOffset(years=years)
-            try:
-                subset = series.loc[series.index >= target_date]
-                if len(subset) < 20:
-                    return None, None, None
-
-                # Annualized Return
-                start_val = subset.iloc[0]
-                end_val = series.iloc[-1]
-                ann_ret = (end_val / start_val) ** (1 / years) - 1
-
-                # Annualized Volatility
-                daily_rets = subset.pct_change(fill_method=None).dropna()
-                ann_vol = daily_rets.std() * np.sqrt(252)
-
-                # Ratios & Capture if bench provided
-                ratios = {}
-                if bench_series is not None and not bench_series.empty:
-                    b_subset = bench_series.loc[bench_series.index >= target_date]
-                    if len(b_subset) >= 20:
-                        ab = analytics.calculate_alpha_beta(subset, b_subset)
-                        rm = analytics.calculate_risk_metrics(subset)
-                        cap = analytics.calculate_capture_ratios(subset, b_subset)
-                        ratios = {
-                            "Alpha": ab["alpha"],
-                            "Beta": ab["beta"],
-                            "R-Squared": ab["r_squared"],
-                            "InfoRatio": ab.get("info_ratio", 0),
-                            "BattingAvg": ab.get("batting_average", 0),
-                            "Sharpe": rm.get("sharpe_ratio", 0),
-                            "Sortino": rm.get("sortino_ratio", 0),
-                            "DownsideDev": rm.get("downside_deviation", 0),
-                            "Calmar": rm.get("calmar_ratio", 0),
-                            "Omega": rm.get("omega_ratio", 0),
-                            "Hurst": rm.get("hurst_exponent", 0.5),
-                            "Upside": cap["upside"],
-                            "Downside": cap["downside"],
-                        }
-
-                return ann_ret, ann_vol, ratios
-            except Exception:
-                return None, None, None
-
         periods = {"1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10}
         ret_data, vol_data, ratio_data, deep_metrics = [], [], [], []
 
         for label, yrs in periods.items():
-            f_ret, f_vol, f_stats = get_stats_for_period(raw_nav_data["nav"], yrs, raw_bench_data)
+            f_ret, f_vol, f_stats = analytics.get_periodic_metrics(raw_nav_data["nav"], yrs, raw_bench_data)
 
+            # Benchmark standalone metrics for the same window
             b_ret, b_vol = None, None
-            if not raw_bench_data.empty and len(raw_bench_data) > 0:
-                try:
-                    b_target_date = raw_bench_data.index[-1] - pd.DateOffset(years=yrs)
-                    b_subset = raw_bench_data.loc[raw_bench_data.index >= b_target_date]
-                    if len(b_subset) > 20:
-                        b_ret = (b_subset.iloc[-1] / b_subset.iloc[0]) ** (1 / yrs) - 1
-                        b_vol = b_subset.pct_change(fill_method=None).std() * np.sqrt(252)
-                except Exception:
-                    pass
+            if not raw_bench_data.empty:
+                b_ret, b_vol, _ = analytics.get_periodic_metrics(raw_bench_data, yrs)
 
             # Data for compact sections
             ret_data.append({"Period": label, "Fund": f_ret, f"{benchmark_name}": b_ret})
@@ -414,7 +360,7 @@ if selected_code:
             c1, c2 = st.columns([1.2, 1])
             with c1:
                 # Scatter Plot for Insight: Fund Monthly vs Benchmark Monthly
-                df_monthly = pd.DataFrame({"Fund": nav_data["nav"], "Bench": bench_data}).resample("ME").last().pct_change(fill_method=None).dropna()
+                df_monthly = analytics.get_monthly_returns(nav_data["nav"], bench_data)
                 fig_scatter = px.scatter(df_monthly, x="Bench", y="Fund", trendline="ols", title="Monthly Performance Sensitivity", labels={"Bench": f"{benchmark_name} Return", "Fund": "Fund Return"})
                 # Add diagonal y=x line
                 lims = [min(df_monthly.min()), max(df_monthly.max())]
