@@ -7,8 +7,10 @@ import pandas as pd
 import requests
 import streamlit as st
 
-# Setup Logger
-logger = logging.getLogger(__name__)
+from core.logger import get_logger, log_event
+
+# Setup professional logger
+logger = get_logger(__name__)
 
 
 class MFDataFetcher:
@@ -36,13 +38,13 @@ class MFDataFetcher:
                     if isinstance(data, list) and len(data) > 0:
                         # Transform list of dicts to {code: name} dict
                         _self._all_schemes = {str(item["schemeCode"]): item["schemeName"] for item in data}
-                        logger.info(f"Successfully indexed {len(_self._all_schemes)} mutual fund schemes from AMFI.")
+                        log_event(logger, "INDEX_SYNC_SUCCESS", count=len(_self._all_schemes), source="AMFI")
                         return _self._all_schemes
 
-                logger.warning(f"Attempt {attempt + 1} to fetch fund index failed (Status: {response.status_code})")
+                log_event(logger, "INDEX_SYNC_FAILURE", level="warning", attempt=attempt + 1, status=response.status_code)
                 time.sleep(2)
             except Exception as e:
-                logger.error(f"Error building scheme index (Attempt {attempt + 1}): {e}")
+                log_event(logger, "INDEX_SYNC_ERROR", level="error", attempt=attempt + 1, error=str(e))
                 time.sleep(2)
         raise ConnectionError("Unable to load mutual fund index from AMFI. The service may be temporarily down. Please refresh in a few minutes.")
 
@@ -100,7 +102,7 @@ class MFDataFetcher:
                 df = pd.read_csv(cache_path)
                 df["date"] = pd.to_datetime(df["date"])
                 df = df.sort_values("date").set_index("date")
-                logger.info(f"Cache Hit for fund {amfi_code}")
+                log_event(logger, "CACHE_HIT", code=amfi_code, source="LocalCSV")
                 return df
             except Exception as e:
                 logger.warning(f"Persistent cache read failed for {amfi_code}: {e}")
@@ -121,15 +123,15 @@ class MFDataFetcher:
 
                         # Save to Persistent Cache
                         df.to_csv(cache_path, index=False)
-                        logger.info(f"Successfully fetched and cached fund {amfi_code}.")
+                        log_event(logger, "API_FETCH_SUCCESS", code=amfi_code, source="AMFI")
 
                         df = df.sort_values("date").set_index("date")
                         return df
 
-                logger.warning(f"Attempt {attempt + 1} to fetch NAV for {amfi_code} failed (Status: {response.status_code})")
+                log_event(logger, "API_FETCH_FAILURE", level="warning", code=amfi_code, attempt=attempt + 1, status=response.status_code)
                 time.sleep(1.5)
             except Exception as e:
-                logger.error(f"API fetch error for {amfi_code} (Attempt {attempt + 1}): {e}")
+                log_event(logger, "API_FETCH_ERROR", level="error", code=amfi_code, attempt=attempt + 1, error=str(e))
                 time.sleep(2)
 
         # 3. Final Fallback: If API fails, try expired cache as a last resort
@@ -178,8 +180,37 @@ class MFDataFetcher:
 
             return close_data.squeeze()
         except Exception as e:
-            logger.error(f"Error fetching benchmark {ticker}: {e}")
+            log_event(logger, "BENCHMARK_FETCH_ERROR", level="error", ticker=ticker, error=str(e))
             return pd.Series()
+
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def get_current_risk_free_rate(_self):
+        """
+        Fetches the current Indian Risk-Free Rate (91D T-Bill).
+        Primary Source: TradingEconomics (Real-time Market Yield).
+        Fallback: Institutional Baseline (6.5%).
+        """
+        import re
+
+        url = "https://tradingeconomics.com/india/3-month-bill-yield"
+        try:
+            response = _self.session.get(url, headers=_self.headers, timeout=10)
+            if response.status_code == 200:
+                # Optimized regex for JSON/Meta extraction (Stable and Precise)
+                match = re.search(r'"Value":\s*(\d+\.\d+)', response.text, re.I)
+                if not match:
+                    match = re.search(r'"Last":\s*(\d+\.\d+)', response.text, re.I)
+                
+                if match:
+                    rate = float(match.group(1))
+                    log_event(logger, "RF_FETCH_SUCCESS", source="TradingEconomics", rate=rate)
+                    return rate / 100
+        except Exception as e:
+            log_event(logger, "RF_FETCH_ERROR", level="warning", source="TradingEconomics", error=str(e))
+
+        # Final Institutional Fallback (Zero-Fail Policy)
+        log_event(logger, "RF_FETCH_FALLBACK", level="info", source="StaticBaseline", rate=0.065)
+        return 0.065  # 6.5% - Reliable benchmark for Indian debt markets
 
 
 if __name__ == "__main__":
