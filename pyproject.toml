@@ -18,10 +18,13 @@ dependencies = [
     "playwright"
 ]
 
-[project.optional-dependencies]
 dev = [
     "pytest",
-    "ruff"
+    "ruff",
+    "mypy",
+    "pre-commit",
+    "pandas-stubs",
+    "types-requests"
 ]
 
 [project.urls]
@@ -37,3 +40,18 @@ select = ["E", "F", "B", "I"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["app"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

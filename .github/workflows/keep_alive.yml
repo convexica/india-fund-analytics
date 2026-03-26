@@ -17,10 +17,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
-        run: |
-          pip install playwright
-          playwright install chromium
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      - name: Run wake-up script
-        run: python scripts/wake_app.py
+      - name: Install Playwright & Run Wake-up
+        run: |
+          uv run playwright install chromium
+          uv run python scripts/wake_app.py

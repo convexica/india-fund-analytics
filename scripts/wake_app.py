@@ -5,7 +5,7 @@ from playwright.async_api import async_playwright
 
 
 async def wake_app():
-    url = "https://india-fund.streamlit.app/"
+    url = "https://india-fund-analytics.streamlit.app/"
     print(f"Starting wake-up routine for {url}")
 
     async with async_playwright() as p:
