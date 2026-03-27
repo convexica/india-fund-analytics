@@ -3,15 +3,15 @@ from typing import Optional, Tuple
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from components.charts import (
+from app.components.charts import (
     plot_benchmark_comparison,
     plot_capture_ratios,
     plot_drawdown,
     plot_nav_history,
 )
-from core.analytics import MFAnalytics
-from core.data_fetcher import MFDataFetcher
-from core.logger import get_logger, log_event
+from app.core.analytics import MFAnalytics
+from app.core.data_fetcher import MFDataFetcher
+from app.core.logger import get_logger, log_event
 
 # Initialize professional logger
 logger = get_logger(__name__)

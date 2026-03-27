@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import requests
 import streamlit as st
-from core.logger import get_logger, log_event
+from app.core.logger import get_logger, log_event
 
 # Setup professional logger
 logger = get_logger(__name__)
@@ -112,25 +112,27 @@ class MFDataFetcher:
             try:
                 # Add jitter to avoid synchronized stampede from cloud nodes
                 import random
+
                 delay = (base_delay**attempt) + random.random()
                 if attempt > 0:
                     time.sleep(delay)
 
                 response = _self.session.get(url, headers=_self.headers, timeout=(15 if attempt < 2 else 30))
-                
+
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, list) and len(data) > 0:
                         _self._all_schemes = {str(item["schemeCode"]): item["schemeName"] for item in data}
-                        
+
                         # Persist to file cache
                         import json
+
                         with open(scheme_cache, "w", encoding="utf-8") as f:
                             json.dump(_self._all_schemes, f)
-                            
+
                         log_event(logger, "INDEX_SYNC_SUCCESS", count=len(_self._all_schemes), source="AMFI")
                         return _self._all_schemes
-                
+
                 elif response.status_code == 429:
                     logger.warning(f"Rate limited by AMFI (429) on attempt {attempt + 1}")
                 else:
@@ -145,6 +147,7 @@ class MFDataFetcher:
         if scheme_cache.exists():
             try:
                 import json
+
                 with open(scheme_cache, "r", encoding="utf-8") as f:
                     _self._all_schemes = json.load(f)
                 if len(_self._all_schemes) > 0:

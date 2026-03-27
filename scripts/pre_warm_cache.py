@@ -10,15 +10,16 @@ from app.core.logger import get_logger  # noqa: E402
 
 logger = get_logger("pre_warm_cache")
 
+
 def main():
     fetcher = MFDataFetcher()
     total = len(TOP_FUNDS_REGISTRY)
-    
+
     logger.info(f"Starting Institutional Cache Pre-warm for {total} funds...")
-    
+
     success_count = 0
     fail_count = 0
-    
+
     # 1. First, fetch all schemes index
     try:
         fetcher.get_all_schemes()
@@ -40,6 +41,7 @@ def main():
             fail_count += 1
 
     logger.info(f"Pre-warm Complete. Success: {success_count}, Failed: {fail_count}")
+
 
 if __name__ == "__main__":
     main()

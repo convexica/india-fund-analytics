@@ -16,19 +16,20 @@ def find_best_code(all_schemes, search_name):
             # Exclude IDCW/Bonus
             if "idcw" not in full_name.lower() and "bonus" not in full_name.lower():
                 options.append((code, full_name))
-    
+
     if not options:
         return None, None
-        
+
     # Pick the one with shortest name or most standard "Direct Plan-Growth"
     # Usually looking for "Direct Plan-Growth" or "Direct Growth"
     options.sort(key=lambda x: len(x[1]))
     return options[0]
 
+
 def main():
     fetcher = MFDataFetcher()
     all_schemes = fetcher.get_all_schemes()
-    
+
     user_names = [
         "Parag Parikh Flexi Cap",
         "HDFC Balanced Advantage",
@@ -81,7 +82,7 @@ def main():
         "DSP Midcap",
         "Franklin India Flexi Cap",
     ]
-    
+
     results = {}
     for name in user_names:
         code, full_name = find_best_code(all_schemes, name)
@@ -92,8 +93,8 @@ def main():
             if "AXIS LARGE CAP" in name.upper():
                 code, full_name = find_best_code(all_schemes, "Axis Bluechip")
             elif "ICICI PRUDENTIAL BLUECHIP" in name.upper():
-                 code, full_name = find_best_code(all_schemes, "ICICI Prudential Bluechip")
-                 
+                code, full_name = find_best_code(all_schemes, "ICICI Prudential Bluechip")
+
             if code:
                 results[code] = full_name
             else:
@@ -101,6 +102,7 @@ def main():
 
     print("\nFINAL MAPPING:")
     print(json.dumps(results, indent=2))
+
 
 if __name__ == "__main__":
     main()
