@@ -1,21 +1,21 @@
-import logging
+from typing import Optional, Tuple
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from components.charts import (
+
+from app.components.charts import (
     plot_benchmark_comparison,
     plot_capture_ratios,
     plot_drawdown,
     plot_nav_history,
 )
-from core.analytics import MFAnalytics
-from core.data_fetcher import MFDataFetcher
+from app.core.analytics import MFAnalytics
+from app.core.data_fetcher import MFDataFetcher
+from app.core.logger import get_logger, log_event
 
-# Logging Configuration
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger(__name__)
+# Initialize professional logger
+logger = get_logger(__name__)
 
 # Page Configuration
 st.set_page_config(page_title="India Fund Analytics", page_icon="📈", layout="wide")
@@ -39,8 +39,21 @@ st.markdown(
         border: 1px solid #eef2f6;
         margin-bottom: 20px;
     }
-    div[data-testid="stSidebar"] {
+    [data-testid="stSidebar"] {
         background-color: #f0f2f6;
+    }
+    /* Targeted removal of Streamlit's default 6rem sidebar top padding */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        padding-top: 1.5rem !important;
+        gap: 0.8rem;
+    }
+    .metric-card {
+        background-color: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 1px solid #eef2f6;
+        margin-bottom: 20px;
     }
     </style>
     """,
@@ -49,7 +62,7 @@ st.markdown(
 
 
 @st.cache_resource
-def get_tools():
+def get_tools() -> Tuple[MFDataFetcher, MFAnalytics]:
     return MFDataFetcher(), MFAnalytics()
 
 
@@ -57,79 +70,77 @@ fetcher, analytics = get_tools()
 
 # Sidebar - Search and Selection
 with st.sidebar:
-    st.title("📈 Fund Analytics")
-    st.caption("India Mutual Fund Analytics")
-    st.markdown("---")
-    st.header("🔍 Fund Discovery")
-    search_query = st.text_input("Mutual Fund Name", placeholder="e.g. HDFC Flexi Cap")
+    # Custom styled Title to bypass default h1 margins
+    st.markdown("<h1 style='margin-top: -2.5rem; font-size: 1.7rem; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", unsafe_allow_html=True)
+    st.caption("Convexica: Mutual Fund Intelligence")
 
+    st.markdown("---")
+    st.header("🎯 Selection")
+
+    # Fund Discovery
+    search_query = st.text_input("Name", placeholder="Search Fund (e.g. HDFC Flexi)", label_visibility="collapsed")
     selected_code = None
     if search_query:
         try:
             search_results = fetcher.search_funds(search_query)
             if search_results:
                 schemes = list(search_results.values())
-                # Find index of "Direct Plan - Growth" or similar
                 default_ix = 0
                 for i, name in enumerate(schemes):
                     if "Direct" in name and "Growth" in name:
                         default_ix = i
                         break
-
-                selected_name = st.selectbox("Matching Schemes", options=schemes, index=default_ix)
+                selected_name = st.selectbox("Schemes", options=schemes, index=default_ix, label_visibility="collapsed")
                 selected_code = [k for k, v in search_results.items() if v == selected_name][0]
             else:
-                try:
-                    total_count = len(fetcher.get_all_schemes())
-                    st.error(f"No funds found matching '{search_query}'.")
-                    if total_count < 1000:
-                        st.warning(f"Note: Only {total_count} funds loaded. The underlying data source (AMFI) may be temporarily throttled. Please try again in 5 minutes.")
-                    else:
-                        st.info(f"System has {total_count} funds loaded. Try a broader search (e.g., 'HDFC' instead of 'HDFC Mid Cap').")
-                except Exception as e:
-                    st.error(f"Connection Error: {e}")
-                    st.stop()
+                st.error("Not found.")
         except Exception as e:
-            st.error(f"⚠️ **Search Error:** {e}")
-            st.stop()
+            st.error(f"Search error: {e}")
+            logger.error(f"Fund search failed for query '{search_query}': {e}")
 
-    st.markdown("---")
-    st.header("⚙️ Analysis Settings")
-    risk_free_rate = st.slider("Risk Free Rate (%)", 0.0, 10.0, 5.3, 0.1) / 100
-    analytics.rf = risk_free_rate
-
-    bench_type = st.radio("Benchmark Type", ["Index", "Mutual Fund"], horizontal=True)
-
+    # Benchmark Selection (Immediately follows Fund)
+    bench_type = st.radio("Benchmark", ["Index", "Fund"], horizontal=True, label_visibility="collapsed")
     benchmark_code = None
     benchmark_name = "Benchmark"
     benchmark_ticker = None
-
     if bench_type == "Index":
-        bench_option = st.selectbox("Select Index", ["^NSEI (Nifty 50)", "^CRSLDX (Nifty 500)"], index=0)
+        bench_option = st.selectbox("Index", ["^NSEI (Nifty 50)", "^CRSLDX (Nifty 500)"], index=0, label_visibility="collapsed")
         benchmark_ticker = bench_option.split(" ")[0]
         benchmark_name = bench_option.split("(")[1].replace(")", "")
     else:
-        bench_search = st.text_input("Search Benchmark Fund", placeholder="e.g. Parag Parikh")
+        bench_search = st.text_input("Benchmark Search", placeholder="Benchmark Fund", label_visibility="collapsed")
         if bench_search:
             bench_results = fetcher.search_funds(bench_search)
             if bench_results:
-                benchmark_name = st.selectbox("Select Benchmark Fund", options=list(bench_results.values()))
+                benchmark_name = st.selectbox("Select", options=list(bench_results.values()), label_visibility="collapsed")
                 benchmark_code = [k for k, v in bench_results.items() if v == benchmark_name][0]
-            else:
-                st.error("No benchmark funds found.")
 
     st.markdown("---")
-    st.header("⏳ Time Horizon")
-    analysis_period = st.radio("Select Analysis Period", ["All Time", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"], index=0)
+    # Analysis Window (When)
+    st.header("⏳ Horizon")
+    analysis_period = st.radio("Period", ["All Time", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"], index=0, label_visibility="collapsed")
 
-    custom_start_date = None
-    custom_end_date = None
+    import datetime
+
+    custom_start_date: Optional[datetime.date] = None
+    custom_end_date: Optional[datetime.date] = None
+
     if analysis_period == "Custom Range":
         c1, c2 = st.columns(2)
         with c1:
-            custom_start_date = st.date_input("Start Date", value=pd.to_datetime("2020-01-01"))
+            custom_start_date = st.date_input("Start", value=pd.to_datetime("2020-01-01"))
         with c2:
-            custom_end_date = st.date_input("End Date", value=pd.to_datetime("today"))
+            custom_end_date = st.date_input("End", value=pd.to_datetime("today"))
+    else:
+        pass
+
+    st.markdown("---")
+    # Technical Calibration (How)
+    st.header("⚙️ Calibration")
+    # Fetch real-time rate for initial calibration (fallback to 6.5)
+    default_rf = fetcher.get_current_risk_free_rate() * 100
+    risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, default_rf, 0.1) / 100
+    analytics.rf = risk_free_rate
 
 # Main Content
 if selected_code:
@@ -163,6 +174,15 @@ if selected_code:
                 else:
                     raw_bench_data = pd.Series()
 
+            if bench_type == "Index" and raw_bench_data.empty:
+                st.warning(f"⚠️ **Benchmark Connection Timeout**: Could not retrieve {benchmark_name} history. Only fund performance will be displayed.")
+            elif not raw_bench_data.empty:
+                log_event(logger, "BENCHMARK_LOADED", ticker=benchmark_name, status="SUCCESS")
+
+            # 0. Initial App State
+            if "app_init" not in st.session_state:
+                log_event(logger, "APP_LAUNCH", status="SUCCESS")
+                st.session_state.app_init = True
             # Apply Time Period Filtering
             nav_data = raw_nav_data.copy()
             bench_data = raw_bench_data.copy() if not raw_bench_data.empty else pd.Series()
@@ -217,7 +237,7 @@ if selected_code:
 
         m_col0, m_col1, m_col2, m_col3, m_col4 = st.columns(5)
         m_col0.metric(f"Growth ({display_label})", f"{multiplier:.2f}x", help="Investment multiple. e.g., 2.0x means your money doubled.")
-        m_col1.metric(f"CAGR ({display_label})", f"{metrics.get('cagr', 0):.1%}", help="CAGR: The geometric mean return providing the same terminal value as actual returns.")
+        m_col1.metric(f"CAGR ({display_label})", f"{metrics.get('cagr', 0):.1%}", help="The effective annual growth rate of your investment, assuming returns are compounded yearly.")
         m_col2.metric("Volatility", f"{metrics.get('volatility', 0):.1%}", help="Annualized Standard Deviation of returns. Measures the 'bounciness' or risk of the fund.")
         m_col3.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", help="Excess return per unit of risk. Higher is better. Uses the provided Risk-Free Rate.")
         m_col4.metric("Max Drawdown", f"{max_dd:.1%}", help="Largest peak-to-trough decline. Measures the worst-case loss scenario.")
@@ -229,7 +249,14 @@ if selected_code:
         else:
             st.plotly_chart(plot_nav_history(nav_data, selected_name), width="stretch", key="main_nav_history")
 
-        # 1b. Calendar Year Returns
+        # 2. Drawdown History
+        drawdown_fund, _ = analytics.calculate_drawdowns(nav_data["nav"])
+        drawdown_bench = None
+        if not bench_data.empty:
+            drawdown_bench, _ = analytics.calculate_drawdowns(bench_data)
+        st.plotly_chart(plot_drawdown(drawdown_fund, drawdown_bench, selected_name, benchmark_name), width="stretch", key="main_drawdown_history")
+
+        # 3. Calendar Year Returns
         st.markdown("### 📅 Calendar Year Performance")
         f_cal = analytics.calculate_calendar_returns(raw_nav_data["nav"])
         if not raw_bench_data.empty:
@@ -261,79 +288,17 @@ if selected_code:
             fig_cal.update_yaxes(tickformat=".0%")
             st.plotly_chart(fig_cal, width="stretch", key="calendar_year_chart")
 
-        # 2. Drawdown History
-        drawdown_series, _ = analytics.calculate_drawdowns(nav_data["nav"])
-        st.plotly_chart(plot_drawdown(drawdown_series), width="stretch", key="main_drawdown_history")
-
         # Performance Analysis Data Prep
-        def get_stats_for_period(series, years, bench_series=None):
-            if series.empty:
-                return None, None, None
-
-            # Check if fund has enough history for the requested 'years'
-            total_days = (series.index[-1] - series.index[0]).days
-            if total_days < (years * 365 - 30):  # 30 day grace period for holidays/launch gaps
-                return None, None, None
-
-            target_date = series.index[-1] - pd.DateOffset(years=years)
-            try:
-                subset = series.loc[series.index >= target_date]
-                if len(subset) < 20:
-                    return None, None, None
-
-                # Annualized Return
-                start_val = subset.iloc[0]
-                end_val = series.iloc[-1]
-                ann_ret = (end_val / start_val) ** (1 / years) - 1
-
-                # Annualized Volatility
-                daily_rets = subset.pct_change().dropna()
-                ann_vol = daily_rets.std() * np.sqrt(252)
-
-                # Ratios & Capture if bench provided
-                ratios = {}
-                if bench_series is not None and not bench_series.empty:
-                    b_subset = bench_series.loc[bench_series.index >= target_date]
-                    if len(b_subset) >= 20:
-                        ab = analytics.calculate_alpha_beta(subset, b_subset)
-                        rm = analytics.calculate_risk_metrics(subset)
-                        cap = analytics.calculate_capture_ratios(subset, b_subset)
-                        ratios = {
-                            "Alpha": ab["alpha"],
-                            "Beta": ab["beta"],
-                            "R-Squared": ab["r_squared"],
-                            "InfoRatio": ab.get("info_ratio", 0),
-                            "BattingAvg": ab.get("batting_average", 0),
-                            "Sharpe": rm.get("sharpe_ratio", 0),
-                            "Sortino": rm.get("sortino_ratio", 0),
-                            "DownsideDev": rm.get("downside_deviation", 0),
-                            "Calmar": rm.get("calmar_ratio", 0),
-                            "Omega": rm.get("omega_ratio", 0),
-                            "Hurst": rm.get("hurst_exponent", 0.5),
-                            "Upside": cap["upside"],
-                            "Downside": cap["downside"],
-                        }
-
-                return ann_ret, ann_vol, ratios
-            except Exception:
-                return None, None, None
-
         periods = {"1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10}
         ret_data, vol_data, ratio_data, deep_metrics = [], [], [], []
 
         for label, yrs in periods.items():
-            f_ret, f_vol, f_stats = get_stats_for_period(raw_nav_data["nav"], yrs, raw_bench_data)
+            f_ret, f_vol, f_stats = analytics.get_periodic_metrics(raw_nav_data["nav"], yrs, raw_bench_data)
 
+            # Benchmark standalone metrics for the same window
             b_ret, b_vol = None, None
-            if not raw_bench_data.empty and len(raw_bench_data) > 0:
-                try:
-                    b_target_date = raw_bench_data.index[-1] - pd.DateOffset(years=yrs)
-                    b_subset = raw_bench_data.loc[raw_bench_data.index >= b_target_date]
-                    if len(b_subset) > 20:
-                        b_ret = (b_subset.iloc[-1] / b_subset.iloc[0]) ** (1 / yrs) - 1
-                        b_vol = b_subset.pct_change().std() * np.sqrt(252)
-                except Exception:
-                    pass
+            if not raw_bench_data.empty:
+                b_ret, b_vol, _ = analytics.get_periodic_metrics(raw_bench_data, yrs)
 
             # Data for compact sections
             ret_data.append({"Period": label, "Fund": f_ret, f"{benchmark_name}": b_ret})
@@ -399,7 +364,7 @@ if selected_code:
             c1, c2 = st.columns([1.2, 1])
             with c1:
                 # Scatter Plot for Insight: Fund Monthly vs Benchmark Monthly
-                df_monthly = pd.DataFrame({"Fund": nav_data["nav"], "Bench": bench_data}).resample("ME").last().pct_change().dropna()
+                df_monthly = analytics.get_monthly_returns(nav_data["nav"], bench_data)
                 fig_scatter = px.scatter(df_monthly, x="Bench", y="Fund", trendline="ols", title="Monthly Performance Sensitivity", labels={"Bench": f"{benchmark_name} Return", "Fund": "Fund Return"})
                 # Add diagonal y=x line
                 lims = [min(df_monthly.min()), max(df_monthly.max())]

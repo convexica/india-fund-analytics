@@ -46,6 +46,9 @@ graph TD
 *   **Data Layer**: Custom robust integration with **AMFI API** (`mfapi.in`) with browser-mimicking headers and **yfinance** for index benchmarks.
 *   **Persistence**: Built-in local file-based caching in `data/cache/` to minimize API latency and handle throttling.
 *   **Observability**: Integrated **Structured Logging** for tracking API status, cache hits/misses, and error diagnostics.
+*   **Type Integrity**: Enforced **Static Type Hinting** with **Mypy**, ensuring data types across the financial engine are validated before execution.
+*   **Dependency Governance**: Uses **`uv`** for deterministic builds with a high-security `uv.lock` file, preventing "dependency drift." 
+
 
 ---
 
@@ -59,11 +62,12 @@ python -m venv venv
 ```
 
 ### 2. Install Dependencies
-Professional installations can use the modern `pyproject.toml` or the legacy `requirements.txt`:
+Professional installations can use **`uv`** (recommended) for perfect reproducibility, or standard `pip`:
 ```bash
-# Mac/Linux: source venv/bin/activate | Windows: .\venv\Scripts\activate
-pip install . 
-# OR
+# Institutional Standard (Perfectly reproducible)
+uv sync
+
+# Legacy Standard (Standard install)
 pip install -r requirements.txt
 ```
 
@@ -107,8 +111,13 @@ streamlit run app/main.py
 ## ⚙️ Deployment & Quality Assurance
 
 *   **Deployment**: Hosted on **Streamlit Cloud**.
-*   **CI/CD**: Uses **GitHub Actions** for the **"CI Guardian"** workflow, automatically running `ruff` (linter) and `pytest` (tests) on every push.
-*   **Reliability**: A scheduled workflow runs every 6 hours using **Playwright** to prevent the instance from entering "sleep mode" on the free tier.
+*   **CI/CD**: Uses **GitHub Actions** for the **"CI Guardian"** workflow:
+    *   **Linter**: Fast style checking with **Ruff**.
+    *   **Type Guard**: Strict static analysis with **Mypy**.
+    *   **Unit Tests**: Automated financial validation with **Pytest**.
+*   **Automation**: A scheduled workflow runs every 6 hours using **Playwright** to prevent the instance from entering "sleep mode" on the free tier.
+*   **Sustainability**: Managed by **Dependabot** to keep dependencies secure and up-to-date with zero-effort maintenance.
+
 
 ---
 

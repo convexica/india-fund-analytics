@@ -8,7 +8,17 @@ def plot_nav_history(nav_df, scheme_name):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=nav_df.index, y=nav_df["nav"], mode="lines", name="NAV", line=dict(color="#1f77b4", width=2)))
 
-    fig.update_layout(title=f"NAV History: {scheme_name}", xaxis_title="Date", yaxis_title="NAV", template="plotly_white", hovermode="x unified", height=400, margin=dict(l=20, r=20, t=40, b=20))
+    fig.update_layout(
+        title=f"NAV History: {scheme_name}",
+        xaxis_title="Date",
+        yaxis_title="NAV",
+        template="plotly_white",
+        hovermode="x unified",
+        height=430,
+        margin=dict(l=20, r=20, t=50, b=100),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     return fig
 
 
@@ -23,19 +33,34 @@ def plot_rolling_returns(rolling_df, window_years):
     return fig
 
 
-def plot_drawdown(drawdown_df):
-    """Plot drawdown chart."""
+def plot_drawdown(fund_drawdown, bench_drawdown=None, fund_name="Fund", bench_name="Benchmark"):
+    """Plot comparative drawdown chart."""
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=drawdown_df.index, y=drawdown_df, fill="tozeroy", name="Drawdown", line=dict(color="red")))
+    # Fund Trace - Professional bold red with subtle fill
+    fig.add_trace(go.Scatter(x=fund_drawdown.index, y=fund_drawdown, fill="tozeroy", name=fund_name, line=dict(color="#d62728", width=2)))
+    # Benchmark Trace - Neutral Dark Gray dashed line for contrast
+    if bench_drawdown is not None:
+        # Align index before plotting to ensure clean overlay
+        bench_aligned = bench_drawdown.reindex(fund_drawdown.index).ffill()
+        fig.add_trace(go.Scatter(x=bench_aligned.index, y=bench_aligned, name=bench_name, line=dict(color="#555555", width=1.5, dash="dot")))
 
-    fig.update_layout(title="Drawdown History", xaxis_title="Date", yaxis_title="Drawdown (%)", template="plotly_white", height=400)
+    fig.update_layout(
+        title="Drawdown History (Loss Severity)",
+        xaxis_title="Date",
+        yaxis_title="Drawdown (%)",
+        template="plotly_white",
+        hovermode="x unified",
+        height=430,
+        margin=dict(l=20, r=20, t=50, b=100),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     fig.update_yaxes(tickformat=".1%")
     return fig
 
 
 def plot_returns_distribution(nav_df):
     """Plot distribution of daily returns."""
-    returns = nav_df["nav"].pct_change().dropna()
+    returns = nav_df["nav"].pct_change(fill_method=None).dropna()
     fig = px.histogram(returns, nbins=50, title="Daily Returns Distribution", labels={"value": "Daily Return"}, color_discrete_sequence=["#2ca02c"])
     fig.update_layout(template="plotly_white", showlegend=False, height=400)
     fig.update_xaxes(tickformat=".1%")
@@ -59,7 +84,15 @@ def plot_benchmark_comparison(fund_nav, bench_nav, fund_name, bench_name):
     fig.add_trace(go.Scatter(x=df.index, y=df["fund"], name=fund_name, line=dict(width=2)))
     fig.add_trace(go.Scatter(x=df.index, y=df["bench"], name=bench_name, line=dict(width=2, dash="dash")))
 
-    fig.update_layout(title=f"{fund_name} vs {bench_name} (Rebased to 100)", xaxis_title="Date", yaxis_title="Normalized Value", template="plotly_white", height=450)
+    fig.update_layout(
+        title=f"{fund_name} vs {bench_name} (Rebased to 100)",
+        xaxis_title="Date",
+        yaxis_title="Normalized Value",
+        template="plotly_white",
+        height=450,
+        margin=dict(l=20, r=20, t=50, b=100),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     return fig
 
 

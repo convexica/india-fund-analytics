@@ -1,4 +1,4 @@
-# --- Core Dashboard Dependencies ---
+# --- Institutional Quantitative Dashboard ---
 streamlit
 pandas
 numpy
@@ -6,7 +6,13 @@ plotly
 yfinance
 scipy
 statsmodels
-
-# --- Automation & Testing ---
 playwright
+requests
+
+# --- Professional Toolchain (Local Only) ---
 pytest
+ruff
+mypy
+pre-commit
+pandas-stubs
+types-requests

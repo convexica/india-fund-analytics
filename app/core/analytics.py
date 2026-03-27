@@ -4,6 +4,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from app.core.logger import get_logger
+
+# Initialize professional logger
+logger = get_logger(__name__)
+
 
 class MFAnalytics:
     """
@@ -83,7 +88,7 @@ class MFAnalytics:
         if nav_series.empty or len(nav_series) < 2:
             return 0.0
 
-        returns = nav_series.pct_change().dropna()
+        returns = nav_series.pct_change(fill_method=None).dropna()
         if returns.empty:
             return 0.0
 
@@ -115,7 +120,7 @@ class MFAnalytics:
         if nav_series.empty or len(nav_series) < 2:
             return {}
 
-        returns = nav_series.pct_change().dropna()
+        returns = nav_series.pct_change(fill_method=None).dropna()
         if returns.empty:
             return {}
 
@@ -175,7 +180,7 @@ class MFAnalytics:
             return 0.5
 
         lags = range(2, 20)
-        vals = nav_series.values
+        vals = nav_series.to_numpy()
 
         # Variance of differences across different lags
         tau = [np.sqrt(np.std(vals[lag:] - vals[:-lag])) for lag in lags]
@@ -215,15 +220,18 @@ class MFAnalytics:
             Dict[str, float]: {'upside': percentage, 'downside': percentage}.
         """
         # Ensure 1D series
-        if hasattr(benchmark_nav, "squeeze"):
-            benchmark_nav = benchmark_nav.squeeze()
+        bench_series: pd.Series
+        if isinstance(benchmark_nav, pd.DataFrame):
+            bench_series = benchmark_nav.iloc[:, 0]
+        else:
+            bench_series = benchmark_nav
 
-        df = pd.DataFrame({"fund": fund_nav, "bench": benchmark_nav}).dropna()
+        df = pd.DataFrame({"fund": fund_nav, "bench": bench_series}).dropna()
         if df.empty:
             return {"upside": 0.0, "downside": 0.0}
 
         # Monthly resampled returns
-        monthly_df = df.resample("ME").last().pct_change().dropna()
+        monthly_df = df.resample("ME").last().pct_change(fill_method=None).dropna()
 
         upside_bench = monthly_df[monthly_df["bench"] > 0]
         downside_bench = monthly_df[monthly_df["bench"] <= 0]
@@ -249,15 +257,18 @@ class MFAnalytics:
             Dict[str, float]: Regression outputs (Alpha, Beta, R-Squared, etc.).
         """
         rf = rf_rate if rf_rate is not None else _self.rf
-        if hasattr(benchmark_nav, "squeeze"):
-            benchmark_nav = benchmark_nav.squeeze()
+        bench_series: pd.Series
+        if isinstance(benchmark_nav, pd.DataFrame):
+            bench_series = benchmark_nav.iloc[:, 0]
+        else:
+            bench_series = benchmark_nav
 
-        df = pd.DataFrame({"fund": fund_nav, "bench": benchmark_nav}).dropna()
+        df = pd.DataFrame({"fund": fund_nav, "bench": bench_series}).dropna()
         if len(df) < 20:
             return {"alpha": 0.0, "beta": 0.0, "r_squared": 0.0}
 
-        f_ret = df["fund"].pct_change().dropna()
-        b_ret = df["bench"].pct_change().dropna()
+        f_ret = df["fund"].pct_change(fill_method=None).dropna()
+        b_ret = df["bench"].pct_change(fill_method=None).dropna()
 
         daily_rf = rf / 252
         f_excess = f_ret - daily_rf
@@ -293,19 +304,20 @@ class MFAnalytics:
             return pd.Series(dtype=float)
 
         yearly_nav = nav_series.resample("YE").last()
-        returns = yearly_nav.pct_change()
+        returns = yearly_nav.pct_change(fill_method=None)
 
         # Handle first year (possibly partial)
         if not yearly_nav.empty:
             returns.iloc[0] = (yearly_nav.iloc[0] / nav_series.iloc[0]) - 1
 
-        returns.index = returns.index.year
+        dt_index = pd.DatetimeIndex(returns.index)
+        returns.index = pd.Index(dt_index.year)
         return returns
 
     @st.cache_data(show_spinner=False)
     def calculate_rolling_return_profile(_self, nav_series: pd.Series) -> Dict[str, Any]:
         """Generate statistical profiles for standard rolling horizons."""
-        profile = {}
+        profile: Dict[str, Any] = {}
         horizons = {1: "1 Year", 3: "3 Years", 5: "5 Years"}
 
         for yrs, label in horizons.items():
@@ -326,3 +338,59 @@ class MFAnalytics:
                 "% times returns > 20%": (rolling >= 0.20).mean(),
             }
         return profile
+
+    def get_periodic_metrics(self, series: pd.Series, years: int, bench_series: Optional[pd.Series] = None) -> Tuple[Optional[float], Optional[float], Optional[Dict[str, float]]]:
+        """
+        Calculates performance and risk metrics for a specific multi-year window.
+        Moved from UI layer to Engine for SOLID architectural compliance.
+        """
+        if series.empty:
+            return None, None, None
+        try:
+            target_date = series.index[-1] - pd.DateOffset(years=years)
+            subset = series.loc[series.index >= target_date]
+            if len(subset) < 20:
+                return None, None, None
+
+            start_val = subset.iloc[0]
+            end_val = series.iloc[-1]
+            ann_ret = (end_val / start_val) ** (1 / years) - 1
+
+            # Annualized Volatility
+            daily_rets = subset.pct_change(fill_method=None).dropna()
+            ann_vol = daily_rets.std() * np.sqrt(252)
+
+            ratios = {}
+            if bench_series is not None and not bench_series.empty:
+                b_subset = bench_series.loc[bench_series.index >= target_date]
+                if len(b_subset) >= 20:
+                    ab = self.calculate_alpha_beta(subset, b_subset)
+                    rm = self.calculate_risk_metrics(subset)
+                    cap = self.calculate_capture_ratios(subset, b_subset)
+                    ratios = {
+                        "Alpha": ab["alpha"],
+                        "Beta": ab["beta"],
+                        "R-Squared": ab["r_squared"],
+                        "InfoRatio": ab.get("info_ratio", 0),
+                        "BattingAvg": ab.get("batting_average", 0),
+                        "Sharpe": rm.get("sharpe_ratio", 0),
+                        "Sortino": rm.get("sortino_ratio", 0),
+                        "DownsideDev": rm.get("downside_deviation", 0),
+                        "Calmar": rm.get("calmar_ratio", 0),
+                        "Omega": rm.get("omega_ratio", 0),
+                        "Hurst": rm.get("hurst_exponent", 0.5),
+                        "Upside": cap["upside"],
+                        "Downside": cap["downside"],
+                    }
+
+            return ann_ret, ann_vol, ratios
+        except Exception:
+            return None, None, None
+
+    def get_monthly_returns(self, fund_nav: pd.Series, bench_nav: pd.Series) -> pd.DataFrame:
+        """Alignment and resampling logic for monthly comparative returns."""
+        df = pd.DataFrame({"Fund": fund_nav, "Bench": bench_nav}).dropna()
+        if df.empty:
+            return pd.DataFrame()
+        result = df.resample("ME").last().pct_change(fill_method=None).dropna()
+        return result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)
