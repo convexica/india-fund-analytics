@@ -12,6 +12,39 @@ from core.logger import get_logger, log_event
 # Setup professional logger
 logger = get_logger(__name__)
 
+# Institutional Registry: High-Priority Fund Codes for Cache Pre-warming
+# Includes major Category Leaders and Benchmark Proxy funds (HDFC, SBI, ICICI, etc.)
+TOP_FUNDS_REGISTRY = {
+    # Large Cap Leaders
+    "118989": "HDFC Flexi Cap Fund",
+    "102885": "SBI Bluechip Fund",
+    "119063": "ICICI Prudential Bluechip",
+    "107578": "Mirae Asset Large Cap",
+    "101186": "HDFC Top 100 Fund",
+    "118401": "Axis Bluechip Fund",
+    "113401": "Canara Robeco Bluechip",
+    "100371": "Kotak Bluechip Fund",
+    # Flexi & Multicap
+    "122639": "Parag Parikh Flexi Cap",
+    "119062": "ICICI Prudential Multi-Asset",
+    "109258": "Quant Active Fund",
+    "148633": "Quant Flexi Cap Fund",
+    # Small & Midcap Alpha
+    "100508": "L&T Midcap Fund",
+    "120465": "Quant Small Cap Fund",
+    "118778": "SBI Small Cap Fund",
+    "119067": "ICICI Prudential Midcap",
+    "100378": "Kotak Emerging Equity",
+    "100122": "Nippon India Small Cap",
+    "125497": "Axis Small Cap Fund",
+    "145963": "HDFC Small Cap Fund",
+    # Other Leaders
+    "120505": "Quant Tax Plan (ELSS)",
+    "118834": "SBI Contra Fund",
+    "118974": "HDFC Mid-Cap Opportunities",
+    "103004": "Franklin India Prima Plus",
+}
+
 
 class MFDataFetcher:
     def __init__(self):
@@ -50,30 +83,43 @@ class MFDataFetcher:
             except Exception as e:
                 logger.warning(f"Failed to read scheme cache: {e}")
 
-        # 2. Fetch from API
+        # 2. Fetch from API with Exponential Backoff
         url = "https://api.mfapi.in/mf"
-        for attempt in range(3):
+        max_attempts = 5
+        base_delay = 2
+
+        for attempt in range(max_attempts):
             try:
-                response = _self.session.get(url, headers=_self.headers, timeout=30)
+                # Add jitter to avoid synchronized stampede from cloud nodes
+                import random
+                delay = (base_delay**attempt) + random.random()
+                if attempt > 0:
+                    time.sleep(delay)
+
+                response = _self.session.get(url, headers=_self.headers, timeout=(15 if attempt < 2 else 30))
+                
                 if response.status_code == 200:
                     data = response.json()
                     if isinstance(data, list) and len(data) > 0:
-                        # Transform list of dicts to {code: name} dict
                         _self._all_schemes = {str(item["schemeCode"]): item["schemeName"] for item in data}
                         
-                        # Save to file cache
+                        # Persist to file cache
                         import json
                         with open(scheme_cache, "w", encoding="utf-8") as f:
                             json.dump(_self._all_schemes, f)
                             
                         log_event(logger, "INDEX_SYNC_SUCCESS", count=len(_self._all_schemes), source="AMFI")
                         return _self._all_schemes
+                
+                elif response.status_code == 429:
+                    logger.warning(f"Rate limited by AMFI (429) on attempt {attempt + 1}")
+                else:
+                    logger.warning(f"AMFI API returned status {response.status_code} on attempt {attempt + 1}")
 
-                log_event(logger, "INDEX_SYNC_FAILURE", level="warning", attempt=attempt + 1, status=response.status_code)
-                time.sleep(2)
+            except requests.exceptions.Timeout:
+                logger.warning(f"AMFI API timeout on attempt {attempt + 1}")
             except Exception as e:
                 log_event(logger, "INDEX_SYNC_ERROR", level="error", attempt=attempt + 1, error=str(e))
-                time.sleep(2)
 
         # 3. Last resort: use expired file cache if exists
         if scheme_cache.exists():

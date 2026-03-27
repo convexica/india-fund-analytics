@@ -18,11 +18,11 @@ venv/
 env/
 ENV/
 
-# Data & Documents (Institutional Exclusions)
-data/
-*.csv
-*.xlsx
-*.json
+# Data & Documents (Institutional Cache Enabled)
+data/*
+!data/cache/
+!data/cache/*.json
+!data/cache/*.csv
 cookies.txt
 .env
 *.log
