@@ -1,5 +1,8 @@
 name: CI Guardian (Institutional-Grade)
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   push:
     branches: [ "main", "master" ]
@@ -13,13 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.10"
 
       - name: Run Ruff (Linter & Formatter)
         run: |
@@ -32,13 +35,13 @@ jobs:
     needs: quality-check
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.10"
 
       - name: Run Mypy (Types)
         run: uv run mypy app/
@@ -49,13 +52,13 @@ jobs:
     needs: [quality-check, type-check]
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install uv
-        run: curl -LsSf https://astral.sh/uv/install.sh | sh
-
-      - name: Set up Python
-        run: uv python install 3.10
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.10"
 
       - name: Run Pytest
         run: uv run pytest tests/

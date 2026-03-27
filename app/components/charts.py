@@ -8,7 +8,17 @@ def plot_nav_history(nav_df, scheme_name):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=nav_df.index, y=nav_df["nav"], mode="lines", name="NAV", line=dict(color="#1f77b4", width=2)))
 
-    fig.update_layout(title=f"NAV History: {scheme_name}", xaxis_title="Date", yaxis_title="NAV", template="plotly_white", hovermode="x unified", height=430, margin=dict(l=20, r=20, t=50, b=100), showlegend=True, legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+    fig.update_layout(
+        title=f"NAV History: {scheme_name}",
+        xaxis_title="Date",
+        yaxis_title="NAV",
+        template="plotly_white",
+        hovermode="x unified",
+        height=430,
+        margin=dict(l=20, r=20, t=50, b=100),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     return fig
 
 
@@ -34,7 +44,16 @@ def plot_drawdown(fund_drawdown, bench_drawdown=None, fund_name="Fund", bench_na
         bench_aligned = bench_drawdown.reindex(fund_drawdown.index).ffill()
         fig.add_trace(go.Scatter(x=bench_aligned.index, y=bench_aligned, name=bench_name, line=dict(color="#555555", width=1.5, dash="dot")))
 
-    fig.update_layout(title="Drawdown History (Loss Severity)", xaxis_title="Date", yaxis_title="Drawdown (%)", template="plotly_white", hovermode="x unified", height=430, margin=dict(l=20, r=20, t=50, b=100), legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+    fig.update_layout(
+        title="Drawdown History (Loss Severity)",
+        xaxis_title="Date",
+        yaxis_title="Drawdown (%)",
+        template="plotly_white",
+        hovermode="x unified",
+        height=430,
+        margin=dict(l=20, r=20, t=50, b=100),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     fig.update_yaxes(tickformat=".1%")
     return fig
 
@@ -65,7 +84,15 @@ def plot_benchmark_comparison(fund_nav, bench_nav, fund_name, bench_name):
     fig.add_trace(go.Scatter(x=df.index, y=df["fund"], name=fund_name, line=dict(width=2)))
     fig.add_trace(go.Scatter(x=df.index, y=df["bench"], name=bench_name, line=dict(width=2, dash="dash")))
 
-    fig.update_layout(title=f"{fund_name} vs {bench_name} (Rebased to 100)", xaxis_title="Date", yaxis_title="Normalized Value", template="plotly_white", height=450, margin=dict(l=20, r=20, t=50, b=100), legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5))
+    fig.update_layout(
+        title=f"{fund_name} vs {bench_name} (Rebased to 100)",
+        xaxis_title="Date",
+        yaxis_title="Normalized Value",
+        template="plotly_white",
+        height=450,
+        margin=dict(l=20, r=20, t=50, b=100),
+        legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="center", x=0.5),
+    )
     return fig
 
 

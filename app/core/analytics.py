@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import streamlit as st
-from core.logger import get_logger, log_event
+from core.logger import get_logger
 
 # Initialize professional logger
 logger = get_logger(__name__)
@@ -179,7 +179,7 @@ class MFAnalytics:
             return 0.5
 
         lags = range(2, 20)
-        vals = nav_series.values
+        vals = nav_series.to_numpy()
 
         # Variance of differences across different lags
         tau = [np.sqrt(np.std(vals[lag:] - vals[:-lag])) for lag in lags]
@@ -219,10 +219,13 @@ class MFAnalytics:
             Dict[str, float]: {'upside': percentage, 'downside': percentage}.
         """
         # Ensure 1D series
-        if hasattr(benchmark_nav, "squeeze"):
-            benchmark_nav = benchmark_nav.squeeze()
+        bench_series: pd.Series
+        if isinstance(benchmark_nav, pd.DataFrame):
+            bench_series = benchmark_nav.iloc[:, 0]
+        else:
+            bench_series = benchmark_nav
 
-        df = pd.DataFrame({"fund": fund_nav, "bench": benchmark_nav}).dropna()
+        df = pd.DataFrame({"fund": fund_nav, "bench": bench_series}).dropna()
         if df.empty:
             return {"upside": 0.0, "downside": 0.0}
 
@@ -253,10 +256,13 @@ class MFAnalytics:
             Dict[str, float]: Regression outputs (Alpha, Beta, R-Squared, etc.).
         """
         rf = rf_rate if rf_rate is not None else _self.rf
-        if hasattr(benchmark_nav, "squeeze"):
-            benchmark_nav = benchmark_nav.squeeze()
+        bench_series: pd.Series
+        if isinstance(benchmark_nav, pd.DataFrame):
+            bench_series = benchmark_nav.iloc[:, 0]
+        else:
+            bench_series = benchmark_nav
 
-        df = pd.DataFrame({"fund": fund_nav, "bench": benchmark_nav}).dropna()
+        df = pd.DataFrame({"fund": fund_nav, "bench": bench_series}).dropna()
         if len(df) < 20:
             return {"alpha": 0.0, "beta": 0.0, "r_squared": 0.0}
 
@@ -303,7 +309,8 @@ class MFAnalytics:
         if not yearly_nav.empty:
             returns.iloc[0] = (yearly_nav.iloc[0] / nav_series.iloc[0]) - 1
 
-        returns.index = returns.index.year
+        dt_index = pd.DatetimeIndex(returns.index)
+        returns.index = pd.Index(dt_index.year)
         return returns
 
     @st.cache_data(show_spinner=False)
@@ -384,4 +391,5 @@ class MFAnalytics:
         df = pd.DataFrame({"Fund": fund_nav, "Bench": bench_nav}).dropna()
         if df.empty:
             return pd.DataFrame()
-        return df.resample("ME").last().pct_change(fill_method=None).dropna()
+        result = df.resample("ME").last().pct_change(fill_method=None).dropna()
+        return result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)

@@ -1,4 +1,5 @@
-import numpy as np
+from typing import Optional, Tuple
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -60,7 +61,7 @@ st.markdown(
 
 
 @st.cache_resource
-def get_tools():
+def get_tools() -> Tuple[MFDataFetcher, MFAnalytics]:
     return MFDataFetcher(), MFAnalytics()
 
 
@@ -69,15 +70,12 @@ fetcher, analytics = get_tools()
 # Sidebar - Search and Selection
 with st.sidebar:
     # Custom styled Title to bypass default h1 margins
-    st.markdown(
-        "<h1 style='margin-top: -2.5rem; font-size: 1.7rem; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", 
-        unsafe_allow_html=True
-    )
+    st.markdown("<h1 style='margin-top: -2.5rem; font-size: 1.7rem; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", unsafe_allow_html=True)
     st.caption("Convexica: Mutual Fund Intelligence")
 
     st.markdown("---")
     st.header("🎯 Selection")
-    
+
     # Fund Discovery
     search_query = st.text_input("Name", placeholder="Search Fund (e.g. HDFC Flexi)", label_visibility="collapsed")
     selected_code = None
@@ -95,8 +93,9 @@ with st.sidebar:
                 selected_code = [k for k, v in search_results.items() if v == selected_name][0]
             else:
                 st.error("Not found.")
-        except Exception:
-            st.error("Error.")
+        except Exception as e:
+            st.error(f"Search error: {e}")
+            logger.error(f"Fund search failed for query '{search_query}': {e}")
 
     # Benchmark Selection (Immediately follows Fund)
     bench_type = st.radio("Benchmark", ["Index", "Fund"], horizontal=True, label_visibility="collapsed")
@@ -118,12 +117,12 @@ with st.sidebar:
     st.markdown("---")
     # Analysis Window (When)
     st.header("⏳ Horizon")
-    analysis_period = st.radio(
-        "Period", 
-        ["All Time", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"], 
-        index=0,
-        label_visibility="collapsed"
-    )
+    analysis_period = st.radio("Period", ["All Time", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"], index=0, label_visibility="collapsed")
+
+    import datetime
+
+    custom_start_date: Optional[datetime.date] = None
+    custom_end_date: Optional[datetime.date] = None
 
     if analysis_period == "Custom Range":
         c1, c2 = st.columns(2)
@@ -132,8 +131,7 @@ with st.sidebar:
         with c2:
             custom_end_date = st.date_input("End", value=pd.to_datetime("today"))
     else:
-        custom_start_date = None
-        custom_end_date = None
+        pass
 
     st.markdown("---")
     # Technical Calibration (How)

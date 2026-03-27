@@ -2,11 +2,11 @@ import datetime
 import logging
 import time
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import requests
 import streamlit as st
-
 from core.logger import get_logger, log_event
 
 # Setup professional logger
@@ -15,20 +15,42 @@ logger = get_logger(__name__)
 
 class MFDataFetcher:
     def __init__(self):
-        self._all_schemes = None
+        self._all_schemes: Dict[str, str] = {}
         self.session = requests.Session()
         # Mimicking curl headers which were proven to work in this environment
-        self.headers = {"User-Agent": "curl/8.1.0", "Accept": "*/*", "Connection": "keep-alive"}
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": "https://www.mfapi.in",
+            "Referer": "https://www.mfapi.in/",
+        }
         # Define cache directory
         self.cache_dir = Path("data/cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
     @st.cache_data(ttl=86400, show_spinner=False)  # Cache fund list for 24 hours
-    def get_all_schemes(_self):
-        """Fetch all available schemes using direct API."""
+    def get_all_schemes(_self) -> dict[str, str]:
+        """Fetch all available schemes using direct API with file cache fallback."""
         if _self._all_schemes and len(_self._all_schemes) > 100:
             return _self._all_schemes
 
+        scheme_cache = _self.cache_dir / "scheme_index.json"
+
+        # 1. Try to load from valid file cache first (if less than 24h old)
+        if _self._is_cache_valid(scheme_cache, max_age_hours=24):
+            try:
+                import json
+
+                with open(scheme_cache, "r", encoding="utf-8") as f:
+                    _self._all_schemes = json.load(f)
+                if len(_self._all_schemes) > 0:
+                    log_event(logger, "INDEX_CACHE_HIT", count=len(_self._all_schemes), source="LocalFile")
+                    return _self._all_schemes
+            except Exception as e:
+                logger.warning(f"Failed to read scheme cache: {e}")
+
+        # 2. Fetch from API
         url = "https://api.mfapi.in/mf"
         for attempt in range(3):
             try:
@@ -38,6 +60,12 @@ class MFDataFetcher:
                     if isinstance(data, list) and len(data) > 0:
                         # Transform list of dicts to {code: name} dict
                         _self._all_schemes = {str(item["schemeCode"]): item["schemeName"] for item in data}
+                        
+                        # Save to file cache
+                        import json
+                        with open(scheme_cache, "w", encoding="utf-8") as f:
+                            json.dump(_self._all_schemes, f)
+                            
                         log_event(logger, "INDEX_SYNC_SUCCESS", count=len(_self._all_schemes), source="AMFI")
                         return _self._all_schemes
 
@@ -46,9 +74,22 @@ class MFDataFetcher:
             except Exception as e:
                 log_event(logger, "INDEX_SYNC_ERROR", level="error", attempt=attempt + 1, error=str(e))
                 time.sleep(2)
+
+        # 3. Last resort: use expired file cache if exists
+        if scheme_cache.exists():
+            try:
+                import json
+                with open(scheme_cache, "r", encoding="utf-8") as f:
+                    _self._all_schemes = json.load(f)
+                if len(_self._all_schemes) > 0:
+                    logger.warning("Using EXPIRED scheme index cache due to API failure.")
+                    return _self._all_schemes
+            except Exception:
+                pass
+
         raise ConnectionError("Unable to load mutual fund index from AMFI. The service may be temporarily down. Please refresh in a few minutes.")
 
-    def search_funds(self, query):
+    def search_funds(self, query: str) -> dict[str, str]:
         """Search for funds matching the query string."""
         if not query:
             return {}
@@ -92,7 +133,7 @@ class MFDataFetcher:
         return (now - file_time).total_seconds() < (max_age_hours * 3600)
 
     @st.cache_data(ttl=43200, show_spinner=False)  # In-memory cache for 12 hours
-    def get_nav_history(_self, amfi_code):
+    def get_nav_history(_self, amfi_code: str) -> pd.DataFrame:
         """Fetch historical NAV using local cache with API fallback."""
         cache_path = _self._get_cache_path(amfi_code)
 
@@ -148,7 +189,7 @@ class MFDataFetcher:
         raise ConnectionError(f"Unable to fetch NAV for fund {amfi_code}. API down and no cache available.")
 
     @st.cache_data(ttl=86400, show_spinner=False)
-    def get_fund_info(_self, amfi_code):
+    def get_fund_info(_self, amfi_code: str) -> dict[str, Any]:
         """Get detailed fund info using API."""
         url = f"https://api.mfapi.in/mf/{amfi_code}"
         for _attempt in range(3):
@@ -165,7 +206,7 @@ class MFDataFetcher:
         raise ConnectionError(f"Unable to fetch fund details for {amfi_code}.")
 
     @st.cache_data(ttl=43200, show_spinner=False)
-    def get_benchmark_history(_self, ticker="^NSEI", start_date=None):
+    def get_benchmark_history(_self, ticker: str = "^NSEI", start_date: Optional[datetime.date] = None) -> pd.Series:
         """Fetch benchmark history using yfinance with timezone normalization."""
         import yfinance as yf
 
@@ -183,15 +224,18 @@ class MFDataFetcher:
             # Institutional-Grade Normalization: Force Timezone Naive
             # AMFI data is naive, so we must match it for consistent joins.
             close_data.index = pd.to_datetime(close_data.index).tz_localize(None)
-            
+
             log_event(logger, "BENCHMARK_SYNC_SUCCESS", ticker=ticker, data_points=len(close_data))
-            return close_data.squeeze()
+            result = close_data.squeeze()
+            if isinstance(result, pd.Series):
+                return result
+            return pd.Series(result)
         except Exception as e:
             log_event(logger, "BENCHMARK_FETCH_ERROR", level="error", ticker=ticker, error=str(e))
             return pd.Series()
 
     @st.cache_data(ttl=86400, show_spinner=False)
-    def get_current_risk_free_rate(_self):
+    def get_current_risk_free_rate(_self) -> float:
         """
         Fetches the current Indian Risk-Free Rate (91D T-Bill).
         Primary Source: TradingEconomics (Real-time Market Yield).
@@ -207,7 +251,7 @@ class MFDataFetcher:
                 match = re.search(r'"Value":\s*(\d+\.\d+)', response.text, re.I)
                 if not match:
                     match = re.search(r'"Last":\s*(\d+\.\d+)', response.text, re.I)
-                
+
                 if match:
                     rate = float(match.group(1))
                     log_event(logger, "RF_FETCH_SUCCESS", source="TradingEconomics", rate=rate)
