@@ -3,6 +3,7 @@ from typing import Optional, Tuple
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
 from app.components.charts import (
     plot_benchmark_comparison,
     plot_capture_ratios,

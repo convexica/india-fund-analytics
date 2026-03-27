@@ -21,8 +21,8 @@ ENV/
 # Data & Documents (Institutional Cache Enabled)
 data/*
 !data/cache/
-!data/cache/*.json
-!data/cache/*.csv
+data/cache/*
+!data/cache/scheme_index.json
 cookies.txt
 .env
 *.log
