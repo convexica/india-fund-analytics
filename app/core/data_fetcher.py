@@ -1,6 +1,7 @@
 import datetime
 import logging
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -82,6 +83,28 @@ class MFDataFetcher:
         # Define cache directory
         self.cache_dir = Path("data/cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _sync_from_cloud_cache(self, filename: str) -> bool:
+        """Attempt to download pre-warmed cache from the dedicated 'data-cache' branch."""
+        try:
+            # Using raw.githubusercontent.com to fetch the latest CSV from our orphan branch
+            # Repository URL is derived from established professional metadata
+            repo_base = "https://raw.githubusercontent.com/convexica/india-fund-analytics/data-cache"
+            url = f"{repo_base}/data/cache/{filename}"
+
+            target_path = self.cache_dir / filename
+
+            req = urllib.request.Request(url, headers=self.headers)
+            with urllib.request.urlopen(req, timeout=10) as response:
+                if response.status == 200:
+                    with open(target_path, "wb") as f:
+                        f.write(response.read())
+                    log_event(logger, "CLOUD_CACHE_SYNC", filename=filename, status="Success")
+                    return True
+        except Exception as e:
+            # Silent fallback if cloud sync fails
+            logger.debug(f"Cloud cache sync skipped for {filename}: {e}")
+        return False
 
     @st.cache_data(ttl=86400, show_spinner=False)  # Cache fund list for 24 hours
     def get_all_schemes(_self) -> dict[str, str]:

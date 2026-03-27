@@ -23,10 +23,16 @@ jobs:
       - name: Run Pre-warm Script
         run: uv run python scripts/pre_warm_cache.py
 
-      - name: Commit and Push Cached CSVs
+      - name: Push to Data-Cache Branch
         run: |
           git config --global user.name "Institutional-Bot"
           git config --global user.email "bot@convexica.com"
-          git add data/cache/*.json data/cache/*.csv
+          # Move to a dedicated orphan branch to keep 'main' history clean
+          git checkout --orphan data-cache
+          git rm -rf . --quiet
+          mkdir -p data/cache
+          cp -r /home/runner/work/india-fund-analytics/india-fund-analytics/data/cache/* data/cache/
+          git add data/cache/
           git commit -m "chore(data): Daily institutional cache refresh [skip ci]" || echo "No changes to commit"
-          git push origin main || echo "No changes to push"
+          # Force push because this is a transient data branch
+          git push origin data-cache --force
