@@ -1,12 +1,12 @@
-import sys
-import os
 import json
-
+import os
+import sys
 
 # Add root for imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.data_fetcher import MFDataFetcher
+from app.core.data_fetcher import MFDataFetcher  # noqa: E402
+
 
 def find_best_code(all_schemes, search_name):
     # Ensure it's Direct Growth

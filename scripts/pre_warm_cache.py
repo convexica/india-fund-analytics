@@ -1,13 +1,12 @@
-import sys
 import os
+import sys
 import time
-from pathlib import Path
 
-# Add the app directory to the path so we can import our modules
+# Add root for imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.data_fetcher import MFDataFetcher, TOP_FUNDS_REGISTRY
-from app.core.logger import get_logger
+from app.core.data_fetcher import TOP_FUNDS_REGISTRY, MFDataFetcher  # noqa: E402
+from app.core.logger import get_logger  # noqa: E402
 
 logger = get_logger("pre_warm_cache")
 
