@@ -68,24 +68,35 @@ st.markdown(
         display: none !important;
     }
 
-    .main { background-color: #f5f7f9; }
+    .main { background-color: transparent; }
     .stMetric {
-        background-color: #ffffff;
+        background-color: #1e293b;
         padding: 15px;
         border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #eef2f6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.05);
     }
     .metric-card {
-        background-color: #ffffff;
+        background-color: #1e293b;
         padding: 20px;
         border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #eef2f6;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,255,255,0.05);
         margin-bottom: 20px;
     }
     [data-testid="stSidebar"] {
-        background-color: #f0f2f6;
+        background-color: #1e293b;
+        border-right: 1px solid rgba(212, 175, 55, 0.3);
+        box-shadow: 4px 0 15px rgba(0,0,0,0.4);
+    }
+    /* Specific overrides for sidebar collapse/expand arrows & icons */
+    [data-testid="stSidebarCollapseButton"] svg, [data-testid="stSidebarNav"] svg, section[data-testid="stSidebar"] button svg {
+        fill: #d4af37 !important;
+        color: #d4af37 !important;
+    }
+    [data-testid="stSidebarCollapseButton"] button:hover svg {
+        fill: #e2e8f0 !important;
+        color: #e2e8f0 !important;
     }
     /* Restored Safe Top Margin (To prevent cutoff) */
     .stAppViewBlockContainer, .stMainBlockContainer, [data-testid="stAppViewBlockContainer"] {
@@ -288,12 +299,12 @@ if selected_code:
         # Fund Title & Stats Summary (Zero Margin)
         st.markdown(f"<h2 style='margin-top: 0rem; margin-bottom: 0rem;'>{selected_name}</h2>", unsafe_allow_html=True)
         st.markdown(
-            f"<p style='color: #475569; font-size: 0.92rem; margin-top: -0.6rem; margin-bottom: 0.9rem;'>"
+            f"<p style='color: #e2e8f0; font-size: 0.92rem; margin-top: -0.6rem; margin-bottom: 0.9rem;'>"
             f"{fund_info.get('scheme_type', 'N/A')} | "
             f"{fund_info.get('scheme_category', 'N/A')} | "
             f"{fund_info.get('fund_house', 'N/A')} | "
-            f"⚖️ <span style='font-weight: 600;'>Benchmark:</span> <span style='color: #1e293b; font-weight: 600;'>{benchmark_name}</span> | "
-            f"⏳ <span style='font-weight: 600;'>Horizon:</span> <span style='color: #1e293b; font-weight: 600;'>{display_label}</span>"
+            f"⚖️ <span style='font-weight: 600;'>Benchmark:</span> <span style='color: #d4af37; font-weight: 600;'>{benchmark_name}</span> | "
+            f"⏳ <span style='font-weight: 600;'>Horizon:</span> <span style='color: #d4af37; font-weight: 600;'>{display_label}</span>"
             f"</p>",
             unsafe_allow_html=True,
         )
@@ -480,7 +491,7 @@ if selected_code:
                 df_monthly = analytics.get_monthly_returns(nav_data["nav"], bench_data)
                 fig_scatter = plot_market_sensitivity(df_monthly, benchmark_name)
                 st.plotly_chart(fig_scatter, width="stretch", key="market_sensitivity_scatter")
-                st.info(f"**Interpretation:** Points above the dashed line beat {benchmark_name}. A steeper trendline suggests a high-beta fund.")
+                st.info("**Interpretation:** Points above the **orange line** beat the Benchmark. A steeper blue line indicates **High Beta** (more aggressive than the benchmark).")
 
             with c2:
                 cap_metrics = analytics.calculate_capture_ratios(nav_data["nav"], bench_data)
@@ -552,17 +563,17 @@ if selected_code:
 
             profile_df = pd.DataFrame(profile)
             row_order = [
-                "Minimum",
-                "Median",
-                "Maximum",
-                "% times returns < -20%",
-                "% times returns -20% to -10%",
-                "% times returns -10% - 0%",
-                "% times returns 0 - 5%",
-                "% times returns 5 - 10%",
-                "% times returns 10 - 15%",
-                "% times returns 15 - 20%",
-                "% times returns > 20%",
+                "Minimum Return",
+                "Median Return",
+                "Maximum Return",
+                "% times returns   < -20%",
+                "% times returns   -20% to -10%",
+                "% times returns   -10% to 0%",
+                "% times returns    0% to 5%",
+                "% times returns    5% to 10%",
+                "% times returns   10% to 15%",
+                "% times returns   15% to 20%",
+                "% times returns   > 20%",
             ]
             profile_df = profile_df.reindex(row_order)
             disp_profile = profile_df.reset_index().rename(columns={"index": "Metric"})
@@ -574,29 +585,35 @@ if selected_code:
             def apply_grid_styling(row):
                 colors = [""] * len(row)
                 metric = row["Metric"]
-                if metric in ["Minimum", "Median", "Maximum"]:
-                    bg = "rgba(0, 48, 96, 0.08)"
+
+                # 1. Summary Block (Min, Median, Max) - High-Visibility Institutional Steel
+                if metric in ["Minimum Return", "Median Return", "Maximum Return"]:
                     for i in range(len(row)):
-                        colors[i] = f"background-color: {bg}; color: #1e293b; font-weight: bold;"
+                        colors[i] = "background-color: rgba(226, 232, 240, 0.18); color: #ffffff; font-weight: bold; border-left: 3px solid #d4af37;"
                     return colors
 
+                # 2. Identification of Probability Clusters
                 base_rgb = None
-                if any(s in metric for s in ["< -20", "-20% to -10", "-10% - 0"]):
-                    base_rgb = "220, 53, 69"  # Red
-                elif any(s in metric for s in ["10 - 15", "15 - 20", "> 20"]):
-                    base_rgb = "25, 135, 84"  # Green
-                elif any(s in metric for s in ["0 - 5", "5 - 10"]):
-                    base_rgb = "255, 193, 7"  # Amber
+                if any(s in metric for s in ["< -20", "-20% to -10", "-10% to 0"]):
+                    base_rgb = "239, 68, 68"  # Tailwind Red
+                elif any(s in metric for s in ["10% to 15%", "15% to 20%", "> 20"]):
+                    base_rgb = "34, 197, 94"  # Tailwind Green
+                elif any(s in metric for s in ["0% to 5%", "5% to 10%"]):
+                    base_rgb = "245, 158, 11"  # Tailwind Amber
 
                 if base_rgb:
+                    # Apply a high-density base tint to the entire row
+                    row_base_tint = f"background-color: rgba({base_rgb}, 0.14); color: #ffffff;"
                     for i in range(len(row)):
-                        colors[i] = f"background-color: rgba({base_rgb}, 0.12);"
+                        colors[i] = row_base_tint
+
+                    # Apply the Sharp Heatmap to the data columns
                     for i in range(1, len(row)):
                         val = row.iloc[i]
                         if pd.notnull(val) and not isinstance(val, str):
-                            alpha = 0.08 + (val * 0.4) if base_rgb == "255, 193, 7" else 0.12 + (val * 0.55)
-                            txt = "white" if alpha > 0.45 else "black"
-                            colors[i] = f"background-color: rgba({base_rgb}, {alpha}); color: {txt};"
+                            # Aggressive Scaling: Higher starting alpha (0.2) and higher peak (0.85)
+                            alpha = min(0.2 + (float(val) * 0.75), 0.85)
+                            colors[i] = f"background-color: rgba({base_rgb}, {alpha}); color: #ffffff; border: 0.5px solid rgba(255,255,255,0.05);"
                 return colors
 
             styled_df = styled_df.apply(apply_grid_styling, axis=1)

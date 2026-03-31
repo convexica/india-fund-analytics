@@ -10,7 +10,8 @@ A high-performance, institutional-grade quantitative analysis dashboard for Indi
 
 *   **Deep Performance Analysis**: Calculate CAGR, Absolute Growth, and Multiplier across multiple time horizons (1Y, 3Y, 5Y, 10Y, Max).
 *   **Risk & Efficiency**: Compute advanced risk-adjusted metrics like **Sharpe Ratio**, **Sortino Ratio**, **Calmar Ratio**, and **Omega Ratio**.
-*   **Stress Testing (Left-Tail Risk)**: Evaluate fund resilience by isolating capital protection during severe historical market crashes (e.g., COVID-19, 2022 Tightening).
+*   🛡️ **Advanced Historical Stress-Testing**: Evaluate fund resilience during the **2024-25 (Market Correction)**, 2022 (Bear Market), COVID-19 Crash, 2018 NBFC Crisis, and the 2008 GFC.
+*   📊 **Convexica-branded Institutional UI**: High-density interactive dashboard optimized for deep risk-return analysis with Deep Navy & Gold aesthetics.
 *   **Market Character**: Identify fund style using **Beta**, **Jensen's Alpha**, and **Information Ratio** against benchmarks (Nifty 50, Nifty 500).
 *   **Capture Dynamics**: Analyze **Upside & Downside Capture Ratios** and **Market Sensitivity** (OLS Trendlines) to understand behavior in varying market conditions.
 *   **Rolling Returns**: Generate detailed rolling return profiles illustrating the probability of beating bank FDs and the frequency of negative returns.

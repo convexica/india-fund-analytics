@@ -195,11 +195,20 @@ def plot_market_sensitivity(df_monthly: pd.DataFrame, benchmark_name: str) -> go
     if df_monthly.empty:
         return go.Figure()
 
-    fig = px.scatter(df_monthly, x="Bench", y="Fund", trendline="ols", title="Monthly Performance Sensitivity", labels={"Bench": f"{benchmark_name} Return", "Fund": "Fund Return"})
+    fig = px.scatter(
+        df_monthly,
+        x="Bench",
+        y="Fund",
+        trendline="ols",
+        title="Monthly Performance Sensitivity",
+        labels={"Bench": "Benchmark Return", "Fund": "Fund Return"},
+        color_discrete_sequence=["#1f77b4"],
+        trendline_color_override="#1f77b4",
+    )
 
-    # Add diagonal y=x line
+    # Add diagonal y=x line (Benchmark Parity)
     lims = [min(df_monthly.min()), max(df_monthly.max())]
-    fig.add_shape(type="line", x0=lims[0], y0=lims[0], x1=lims[1], y1=lims[1], line=dict(color="gray", dash="dash"))
+    fig.add_shape(type="line", x0=lims[0], y0=lims[0], x1=lims[1], y1=lims[1], line=dict(color="#ff7f0e", dash="dash"))
 
     fig.update_layout(title=dict(text="Monthly Performance Sensitivity", font=dict(size=18)), height=400, template="plotly_white", font=dict(family="Inter, sans-serif", size=13))
     fig.update_xaxes(tickformat=".0%")
