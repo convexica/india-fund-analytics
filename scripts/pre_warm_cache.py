@@ -2,11 +2,17 @@ import os
 import sys
 import time
 
-# Add root for imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Institutional-Grade: Robust Path Resolution for Local & Cloud Environments
+root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+app_dir = os.path.join(root_dir, "app")
 
-from app.core.data_fetcher import TOP_FUNDS_REGISTRY, MFDataFetcher  # noqa: E402
-from app.core.logger import get_logger  # noqa: E402
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+if app_dir not in sys.path:
+    sys.path.append(app_dir)
+
+from core.data_fetcher import TOP_FUNDS_REGISTRY, MFDataFetcher  # noqa: E402
+from core.logger import get_logger  # noqa: E402
 
 logger = get_logger("pre_warm_cache")
 

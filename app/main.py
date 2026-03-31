@@ -1,18 +1,30 @@
-from typing import Optional, Tuple
+import os
+import sys
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
-from app.components.charts import (
+# Institutional-Grade: Robust Path Resolution for Local & Cloud Environments
+root_dir = os.path.dirname(os.path.abspath(__file__))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+if os.path.dirname(root_dir) not in sys.path:
+    sys.path.append(os.path.dirname(root_dir))
+
+from components.charts import (  # noqa: E402
     plot_benchmark_comparison,
+    plot_calendar_returns,
     plot_capture_ratios,
     plot_drawdown,
+    plot_market_sensitivity,
     plot_nav_history,
+    plot_periodic_metrics,
+    plot_stress_scenarios,
 )
-from app.core.analytics import MFAnalytics
-from app.core.data_fetcher import MFDataFetcher
-from app.core.logger import get_logger, log_event
+from core.analytics import MFAnalytics  # noqa: E402
+from core.data_fetcher import MFDataFetcher  # noqa: E402
+from core.logger import get_logger, log_event  # noqa: E402
 
 # Initialize professional logger
 logger = get_logger(__name__)
@@ -23,6 +35,39 @@ st.set_page_config(page_title="India Fund Analytics", page_icon="📈", layout="
 st.markdown(
     """
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    /* Surgical Typography Override - Replaces Global Force to fix Icon breaking */
+    [data-testid="stHeader"], [data-testid="stSidebar"], .stMarkdown, .stMetric, .stSelectbox, .stTextInput, .stRadio, .stTab, .st-at, .st-ae {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    }
+
+    /* Ensure Icon Fonts are never touched */
+    [data-testid="stIcon"], i, svg {
+        font-family: inherit !important;
+    }
+
+    h1 {
+        font-size: 1.6rem !important;
+        margin-bottom: 0.5rem !important;
+    }
+    h2 {
+        font-size: 1.3rem !important;
+        margin-top: 1.5rem !important;
+        margin-bottom: 0.8rem !important;
+    }
+    h3, h4 {
+        font-size: 1.1rem !important;
+        margin-top: 0.4rem !important;
+        margin-bottom: 0.3rem !important;
+        font-weight: 700 !important;
+    }
+
+    /* Hide the automatic Streamlit/Markdown anchor links (the 'chain' icons) */
+    h1 a, h2 a, h3 a, h4 a {
+        display: none !important;
+    }
+
     .main { background-color: #f5f7f9; }
     .stMetric {
         background-color: #ffffff;
@@ -42,18 +87,20 @@ st.markdown(
     [data-testid="stSidebar"] {
         background-color: #f0f2f6;
     }
-    /* Targeted removal of Streamlit's default 6rem sidebar top padding */
+    /* Restored Safe Top Margin (To prevent cutoff) */
+    .stAppViewBlockContainer, .stMainBlockContainer, [data-testid="stAppViewBlockContainer"] {
+        padding-top: 3.5rem !important;
+        padding-bottom: 2rem !important;
+    }
+
+    /* Give some breathing room for headers */
+    h1, h2, h3 {
+        margin-top: 1rem !important;
+    }
+
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         padding-top: 1.5rem !important;
         gap: 0.8rem;
-    }
-    .metric-card {
-        background-color: #ffffff;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #eef2f6;
-        margin-bottom: 20px;
     }
     </style>
     """,
@@ -61,24 +108,27 @@ st.markdown(
 )
 
 
-@st.cache_resource
-def get_tools() -> Tuple[MFDataFetcher, MFAnalytics]:
+@st.cache_resource(show_spinner="Initializing Analytics Engine...")
+def get_analytics_toolkit() -> Tuple[MFDataFetcher, MFAnalytics]:
+    """Force-initialize the analytical suite - Cache-breaker v2."""
     return MFDataFetcher(), MFAnalytics()
 
 
-fetcher, analytics = get_tools()
+fetcher, analytics = get_analytics_toolkit()
+Riverside_Cache_Breaker = "2.1.0"
 
 # Sidebar - Search and Selection
 with st.sidebar:
     # Custom styled Title to bypass default h1 margins
-    st.markdown("<h1 style='margin-top: -2.5rem; font-size: 1.7rem; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='margin-top: -2.5rem; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", unsafe_allow_html=True)
     st.caption("Convexica: Mutual Fund Intelligence")
 
     st.markdown("---")
-    st.header("🎯 Selection")
+    st.header("🎯 Asset Selection")
 
     # Fund Discovery
-    search_query = st.text_input("Name", placeholder="Search Fund (e.g. HDFC Flexi)", label_visibility="collapsed")
+    st.markdown("**1. Primary Mutual Fund**")
+    search_query = st.text_input("Fund Name", placeholder="Search Fund (e.g. HDFC Flexi)", label_visibility="collapsed")
     selected_code = None
     if search_query:
         try:
@@ -99,16 +149,20 @@ with st.sidebar:
             logger.error(f"Fund search failed for query '{search_query}': {e}")
 
     # Benchmark Selection (Immediately follows Fund)
-    bench_type = st.radio("Benchmark", ["Index", "Fund"], horizontal=True, label_visibility="collapsed")
+    st.markdown("<br>", unsafe_allow_html=True)  # Visual Spacing
+    st.markdown("**2. Comparison Benchmark**")
+    bench_type = st.radio("Benchmark Type", ["Index", "Fund"], horizontal=True, label_visibility="collapsed")
     benchmark_code = None
     benchmark_name = "Benchmark"
     benchmark_ticker = None
     if bench_type == "Index":
-        bench_option = st.selectbox("Index", ["^NSEI (Nifty 50)", "^CRSLDX (Nifty 500)"], index=0, label_visibility="collapsed")
-        benchmark_ticker = bench_option.split(" ")[0]
-        benchmark_name = bench_option.split("(")[1].replace(")", "")
+        # Institutional-Grade: Comprehensive mapping of standard Indian indices
+        INDEX_MAPPING = {"Nifty 50": "^NSEI", "Nifty Next 50": "^NSMIDCP", "Nifty 100": "^CNX100", "Nifty 200": "^CNX200", "Nifty 500": "^CRSLDX"}
+        bench_option = st.selectbox("Index", options=list(INDEX_MAPPING.keys()), index=0, label_visibility="collapsed")
+        benchmark_ticker = INDEX_MAPPING[bench_option]
+        benchmark_name = bench_option
     else:
-        bench_search = st.text_input("Benchmark Search", placeholder="Benchmark Fund", label_visibility="collapsed")
+        bench_search = st.text_input("Benchmark Fund Search", placeholder="Search Benchmark Fund (e.g. Nifty Index Fund)", label_visibility="collapsed")
         if bench_search:
             bench_results = fetcher.search_funds(bench_search)
             if bench_results:
@@ -141,6 +195,12 @@ with st.sidebar:
     default_rf = fetcher.get_current_risk_free_rate() * 100
     risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, default_rf, 0.1) / 100
     analytics.rf = risk_free_rate
+
+    st.markdown("---")
+    if st.button("♻️ Force System Refresh", use_container_width=True, help="Clears entire system cache and reloads all data. Use only if experiencing stale data."):
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
 
 # Main Content
 if selected_code:
@@ -206,16 +266,6 @@ if selected_code:
                 st.stop()
 
     if not raw_nav_data.empty:
-        # Fund Title & Stats Summary
-        st.markdown(f"### {selected_name}")
-        st.caption(f"**{fund_info.get('scheme_type', 'N/A')}** | {fund_info.get('scheme_category', 'N/A')} | {fund_info.get('fund_house', 'N/A')}")
-        st.markdown("---")
-
-        # Top Level Metrics - Single Row
-        metrics = analytics.calculate_risk_metrics(nav_data["nav"])
-        _, max_dd = analytics.calculate_drawdowns(nav_data["nav"])
-        multiplier = analytics.calculate_fund_multiplier(nav_data["nav"])
-
         # Clarify Period Label if actual history is shorter than selection
         actual_days = (nav_data.index[-1] - nav_data.index[0]).days
         actual_yrs = actual_days / 365.25
@@ -235,15 +285,32 @@ if selected_code:
         if analysis_period != "Custom Range":
             display_label = f"S.I. (~{actual_yrs:.1f}Y)" if (is_si or analysis_period == "All Time") else analysis_period
 
+        # Fund Title & Stats Summary (Zero Margin)
+        st.markdown(f"<h2 style='margin-top: 0rem; margin-bottom: 0rem;'>{selected_name}</h2>", unsafe_allow_html=True)
+        st.markdown(
+            f"<p style='color: #475569; font-size: 0.92rem; margin-top: -0.6rem; margin-bottom: 0.9rem;'>"
+            f"{fund_info.get('scheme_type', 'N/A')} | "
+            f"{fund_info.get('scheme_category', 'N/A')} | "
+            f"{fund_info.get('fund_house', 'N/A')} | "
+            f"⚖️ <span style='font-weight: 600;'>Benchmark:</span> <span style='color: #1e293b; font-weight: 600;'>{benchmark_name}</span> | "
+            f"⏳ <span style='font-weight: 600;'>Horizon:</span> <span style='color: #1e293b; font-weight: 600;'>{display_label}</span>"
+            f"</p>",
+            unsafe_allow_html=True,
+        )
+
+        # Top Level Metrics - Single Row
+        metrics = analytics.calculate_risk_metrics(nav_data["nav"])
+        _, max_dd = analytics.calculate_drawdowns(nav_data["nav"])
+        multiplier = analytics.calculate_fund_multiplier(nav_data["nav"])
+
         m_col0, m_col1, m_col2, m_col3, m_col4 = st.columns(5)
-        m_col0.metric(f"Growth ({display_label})", f"{multiplier:.2f}x", help="Investment multiple. e.g., 2.0x means your money doubled.")
-        m_col1.metric(f"CAGR ({display_label})", f"{metrics.get('cagr', 0):.1%}", help="The effective annual growth rate of your investment, assuming returns are compounded yearly.")
+        m_col0.metric("Growth", f"{multiplier:.2f}x", help="Investment multiple. e.g., 2.0x means your money doubled.")
+        m_col1.metric("CAGR", f"{metrics.get('cagr', 0):.1%}", help="The effective annual growth rate of your investment, assuming returns are compounded yearly.")
         m_col2.metric("Volatility", f"{metrics.get('volatility', 0):.1%}", help="Annualized Standard Deviation of returns. Measures the 'bounciness' or risk of the fund.")
         m_col3.metric("Sharpe Ratio", f"{metrics.get('sharpe_ratio', 0):.2f}", help="Excess return per unit of risk. Higher is better. Uses the provided Risk-Free Rate.")
         m_col4.metric("Max Drawdown", f"{max_dd:.1%}", help="Largest peak-to-trough decline. Measures the worst-case loss scenario.")
 
         # 1. Performance History (Rebased to 100)
-        st.markdown("### 📈 Performance & Drawdown")
         if not bench_data.empty:
             st.plotly_chart(plot_benchmark_comparison(nav_data["nav"], bench_data, selected_name, benchmark_name), width="stretch", key="main_perf_comparison")
         else:
@@ -256,37 +323,78 @@ if selected_code:
             drawdown_bench, _ = analytics.calculate_drawdowns(bench_data)
         st.plotly_chart(plot_drawdown(drawdown_fund, drawdown_bench, selected_name, benchmark_name), width="stretch", key="main_drawdown_history")
 
+        # 2.5 Historical Stress Scenarios (Historical Resilience)
+        if not raw_bench_data.empty:
+            stress_df = analytics.calculate_stress_performance(raw_nav_data["nav"], raw_bench_data)
+            if not stress_df.empty:
+                # Visualize the stress test via component
+                st.plotly_chart(plot_stress_scenarios(stress_df), width="stretch", key="stress_scenarios_chart")
+
+                # Data Table with cleaned labels
+                disp_stress = stress_df.copy()
+                disp_stress = disp_stress.rename(columns={"Fund Drop": "Fund", "Benchmark Drop": "Benchmark"})
+
+                # Format to percentage
+                disp_stress["Fund"] = disp_stress["Fund"].apply(lambda x: f"{x:.1%}")
+                disp_stress["Benchmark"] = disp_stress["Benchmark"].apply(lambda x: f"{x:.1%}")
+
+                def fmt_capture(val):
+                    if pd.isna(val) or val is None:
+                        return "N/A"
+                    return f"{val * 100:.0f}%"
+
+                disp_stress["Capture Ratio"] = disp_stress["Capture Ratio"].apply(fmt_capture)
+
+                st.dataframe(
+                    disp_stress,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Crisis": st.column_config.TextColumn("Crisis / Event", width="medium"),
+                        "Period": st.column_config.TextColumn("Historical Dates", width="medium"),
+                        "Capture Ratio": st.column_config.TextColumn(help="Percentage of the market's decline captured by the fund. Lower is better."),
+                    },
+                )
+
         # 3. Calendar Year Returns
         st.markdown("### 📅 Calendar Year Performance")
         f_cal = analytics.calculate_calendar_returns(raw_nav_data["nav"])
         if not raw_bench_data.empty:
             b_cal = analytics.calculate_calendar_returns(raw_bench_data)
-            cal_df = pd.DataFrame({"Fund": f_cal, benchmark_name: b_cal})
+            cal_df = pd.DataFrame({"Fund": f_cal, "Benchmark": b_cal})
         else:
             cal_df = pd.DataFrame({"Fund": f_cal})
 
         # Sort and limit to last 10 entries
         cal_df = cal_df.sort_index(ascending=False).head(11)  # To show roughly 10 years + current YTD
 
-        cal_c1, cal_c2 = st.columns([1, 1.8])
+        cal_c1, cal_c2 = st.columns([1, 1.5])
         with cal_c1:
-            # Display table with formatting
+            # Display table with explicit 'Year' label
             disp_cal = cal_df.copy()
-            for col in disp_cal.columns:
-                disp_cal[col] = disp_cal[col].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "-")
-            st.dataframe(disp_cal, width="stretch", height=420)
+            disp_cal.index.name = "Year"
+            disp_cal = disp_cal.reset_index()
+
+            # Format percentage values
+            for col in ["Fund", "Benchmark"]:
+                if col in disp_cal.columns:
+                    disp_cal[col] = disp_cal[col].apply(lambda x: f"{x:.1%}" if pd.notnull(x) else "-")
+
+            st.dataframe(
+                disp_cal,
+                hide_index=True,
+                width="stretch",
+                height=420,
+                column_config={
+                    "Year": st.column_config.TextColumn("Year", width=80),
+                    "Fund": st.column_config.TextColumn("Fund", width=100),
+                    "Benchmark": st.column_config.TextColumn("Benchmark", width=100),
+                },
+            )
 
         with cal_c2:
-            # Display comparative bar chart
-            cal_df_plot = cal_df.copy()
-            cal_df_plot.index.name = "Year"
-            plot_cal_df = cal_df_plot.reset_index().melt(id_vars="Year", var_name="Type", value_name="Return")
-            fig_cal = px.bar(
-                plot_cal_df, x="Year", y="Return", color="Type", barmode="group", color_discrete_sequence=["#1f77b4", "#ff7f0e"], labels={"Return": "Annual Return", "Year": ""}, height=350
-            )
-            fig_cal.update_layout(margin=dict(l=0, r=0, t=20, b=0), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-            fig_cal.update_yaxes(tickformat=".0%")
-            st.plotly_chart(fig_cal, width="stretch", key="calendar_year_chart")
+            # Display comparative bar chart via component
+            st.plotly_chart(plot_calendar_returns(cal_df), width="stretch", key="calendar_year_chart")
 
         # Performance Analysis Data Prep
         periods = {"1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10}
@@ -301,12 +409,12 @@ if selected_code:
                 b_ret, b_vol, _ = analytics.get_periodic_metrics(raw_bench_data, yrs)
 
             # Data for compact sections
-            ret_data.append({"Period": label, "Fund": f_ret, f"{benchmark_name}": b_ret})
-            vol_data.append({"Period": label, "Fund": f_vol, f"{benchmark_name}": b_vol})
+            ret_data.append({"Period": label, "Fund": f_ret, "Benchmark": b_ret})
+            vol_data.append({"Period": label, "Fund": f_vol, "Benchmark": b_vol})
 
             f_rat = (f_ret / f_vol) if f_ret and f_vol else None
             b_rat = (b_ret / b_vol) if b_ret and b_vol else None
-            ratio_data.append({"Period": label, "Fund": f_rat, f"{benchmark_name}": b_rat})
+            ratio_data.append({"Period": label, "Fund": f_rat, "Benchmark": b_rat})
 
             if f_stats:
                 deep_metrics.append(
@@ -318,25 +426,35 @@ if selected_code:
                         "Sortino": f"{f_stats['Sortino']:.2f}",
                         "Calmar": f"{f_stats['Calmar']:.2f}",
                         "Info Ratio": f"{f_stats['InfoRatio']:.2f}",
-                        "Batting Avg": f"{f_stats['BattingAvg']:.1%}",
+                        "Batting Avg": f"{f_stats['BattingAvg']:.0f}%",
                         "Omega": f"{f_stats['Omega']:.2f}",
                         "Hurst (H)": f"{f_stats['Hurst']:.2f}",
-                        "Upside Capture": f"{f_stats['Upside']:.1f}%",
-                        "Downside Capture": f"{f_stats['Downside']:.1f}%",
+                        "Upside Capture": f"{f_stats['Upside']:.0f}%",
+                        "Downside Capture": f"{f_stats['Downside']:.0f}%",
                     }
                 )
 
         def display_metric_section(title, data_list, is_pct=True):
-            st.markdown(f"#### {title}")
+            st.markdown(f"### {title}")
             df = pd.DataFrame(data_list)
+
+            # Determine Axis Label based on title
+            y_label_map = {"Periodic Returns": "Annual Return", "Periodic Volatility": "Annual Volatility", "Return / Risk Ratio": "Return / Risk"}
+            y_label = y_label_map.get(title, "Metric")
+
             col_tbl, col_cht = st.columns([1, 1.5])
             with col_tbl:
                 display_df = df.copy()
-                for col in ["Fund", benchmark_name]:
-                    display_df[col] = display_df[col].apply(lambda x: f"{x:.1%}" if is_pct and pd.notnull(x) else (f"{x:.2f}" if pd.notnull(x) else "-"))
+                for col in ["Fund", "Benchmark"]:
+                    if col in display_df.columns:
+                        display_df[col] = display_df[col].apply(lambda x: f"{x:.1%}" if is_pct and pd.notnull(x) else (f"{x:.2f}" if pd.notnull(x) else "-"))
 
                 # Professional Column Config for Periodic blocks
-                config = {"Period": st.column_config.TextColumn(width="small")}
+                config = {
+                    "Period": st.column_config.TextColumn("Period", width=80),
+                    "Fund": st.column_config.TextColumn("Fund", width=100),
+                    "Benchmark": st.column_config.TextColumn("Benchmark", width=100),
+                }
                 if title == "Periodic Returns":
                     help_text = "Annualized performance over the specific window."
                 elif title == "Periodic Volatility":
@@ -344,43 +462,31 @@ if selected_code:
                 else:
                     help_text = "Risk-Adjusted Return (Return / Volatility). Measures return per 1% risk."
 
-                config["Fund"] = st.column_config.TextColumn(help=help_text)
+                config["Fund"] = st.column_config.TextColumn("Fund", help=help_text, width=100)
                 st.dataframe(display_df, hide_index=True, width="stretch", column_config=config)
             with col_cht:
-                plot_df = df.melt(id_vars="Period", var_name="Type", value_name="Value")
-                fig = px.bar(plot_df, x="Period", y="Value", color="Type", barmode="group", color_discrete_sequence=["#1f77b4", "#ff7f0e"], height=180)
-                fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), showlegend=True, xaxis_title=None, yaxis_title=None)
-                if is_pct:
-                    fig.update_yaxes(tickformat=".0%")
+                fig = plot_periodic_metrics(df, is_pct=is_pct, y_label=y_label)
                 st.plotly_chart(fig, width="stretch", key=f"bar_{title.lower().replace(' ', '_')}")
 
         display_metric_section("Periodic Returns", ret_data)
         display_metric_section("Periodic Volatility", vol_data)
         display_metric_section("Return / Risk Ratio", ratio_data, is_pct=False)
 
-        # 3. Market Participation Insight
-        st.markdown("### 🎯 Market Participation & Efficiency")
+        # Market Participation Insight
         if not bench_data.empty and len(bench_data) > 20:
             c1, c2 = st.columns([1.2, 1])
             with c1:
                 # Scatter Plot for Insight: Fund Monthly vs Benchmark Monthly
                 df_monthly = analytics.get_monthly_returns(nav_data["nav"], bench_data)
-                fig_scatter = px.scatter(df_monthly, x="Bench", y="Fund", trendline="ols", title="Monthly Performance Sensitivity", labels={"Bench": f"{benchmark_name} Return", "Fund": "Fund Return"})
-                # Add diagonal y=x line
-                lims = [min(df_monthly.min()), max(df_monthly.max())]
-                fig_scatter.add_shape(type="line", x0=lims[0], y0=lims[0], x1=lims[1], y1=lims[1], line=dict(color="gray", dash="dash"))
-                fig_scatter.update_layout(height=400, template="plotly_white")
-                fig_scatter.update_xaxes(tickformat=".0%")
-                fig_scatter.update_yaxes(tickformat=".0%")
+                fig_scatter = plot_market_sensitivity(df_monthly, benchmark_name)
                 st.plotly_chart(fig_scatter, width="stretch", key="market_sensitivity_scatter")
-                st.info(f"**Interpretation:** Points above the line beat {benchmark_name}. A steeper trendline suggests a high-beta fund.")
+                st.info(f"**Interpretation:** Points above the dashed line beat {benchmark_name}. A steeper trendline suggests a high-beta fund.")
 
             with c2:
                 cap_metrics = analytics.calculate_capture_ratios(nav_data["nav"], bench_data)
                 st.plotly_chart(plot_capture_ratios(cap_metrics), width="stretch", key="capture_ratios_summary")
 
         if deep_metrics:
-            st.markdown("#### 📜 Detailed Analysis Reports")
             df_full = pd.DataFrame(deep_metrics)
 
             t1, t2 = st.tabs(["📊 Risk Efficiency", "🧬 Style & Consistency"])
@@ -420,18 +526,38 @@ if selected_code:
                 )
                 st.caption("Analysis of the fund's behavioral style, consistency, and active management character.")
 
-        # 4. Rolling Returns Profile
-        st.markdown("---")
-        st.markdown("### 📊 Rolling Returns Performance")
-        rolling_profile = analytics.calculate_rolling_return_profile(raw_nav_data["nav"])
+        # 4. Rolling Returns Performance
+        st.markdown("### 📊 Rolling Returns Performance Profile")
 
-        if rolling_profile:
-            profile_df = pd.DataFrame(rolling_profile)
+        # Logic to extract profiles and find common horizons
+        fund_profile_raw = analytics.calculate_rolling_return_profile(raw_nav_data["nav"])
+        bench_profile_raw = analytics.calculate_rolling_return_profile(raw_bench_data) if not raw_bench_data.empty else {}
+
+        # Determine common labels available for both (Intersection for consistent comparison)
+        if bench_profile_raw:
+            f_keys = set(fund_profile_raw.keys())
+            b_keys = set(bench_profile_raw.keys())
+            common_horizons = sorted(list(f_keys.intersection(b_keys)), key=lambda x: int(x.split(" ")[0]))
+        else:
+            common_horizons = sorted(list(fund_profile_raw.keys()), key=lambda x: int(x.split(" ")[0]))
+
+        # Filter the profiles to only shared windows
+        fund_profile = {k: fund_profile_raw[k] for k in common_horizons if fund_profile_raw.get(k)}
+        bench_profile = {k: bench_profile_raw[k] for k in common_horizons if bench_profile_raw.get(k)}
+
+        def display_rolling_grid(profile, title, key_suffix):
+            if not profile:
+                st.info(f"Insufficient {title} history.")
+                return
+
+            profile_df = pd.DataFrame(profile)
             row_order = [
                 "Minimum",
                 "Median",
                 "Maximum",
-                "% times -ve returns",
+                "% times returns < -20%",
+                "% times returns -20% to -10%",
+                "% times returns -10% - 0%",
                 "% times returns 0 - 5%",
                 "% times returns 5 - 10%",
                 "% times returns 10 - 15%",
@@ -439,31 +565,65 @@ if selected_code:
                 "% times returns > 20%",
             ]
             profile_df = profile_df.reindex(row_order)
+            disp_profile = profile_df.reset_index().rename(columns={"index": "Metric"})
 
-            # Professionally highlight insufficient history
-            def format_rolling(val):
-                if pd.isna(val) or val is None:
-                    return "Short Hist."
-                return f"{val:.1%}"
+            # Styler Logic
+            formatter: Dict[Any, Any] = {str(c): "{:.0%}" for c in disp_profile.columns if str(c) != "Metric"}
+            styled_df = disp_profile.style.format(formatter=formatter, na_rep="-")
 
+            def apply_grid_styling(row):
+                colors = [""] * len(row)
+                metric = row["Metric"]
+                if metric in ["Minimum", "Median", "Maximum"]:
+                    bg = "rgba(0, 48, 96, 0.08)"
+                    for i in range(len(row)):
+                        colors[i] = f"background-color: {bg}; color: #1e293b; font-weight: bold;"
+                    return colors
+
+                base_rgb = None
+                if any(s in metric for s in ["< -20", "-20% to -10", "-10% - 0"]):
+                    base_rgb = "220, 53, 69"  # Red
+                elif any(s in metric for s in ["10 - 15", "15 - 20", "> 20"]):
+                    base_rgb = "25, 135, 84"  # Green
+                elif any(s in metric for s in ["0 - 5", "5 - 10"]):
+                    base_rgb = "255, 193, 7"  # Amber
+
+                if base_rgb:
+                    for i in range(len(row)):
+                        colors[i] = f"background-color: rgba({base_rgb}, 0.12);"
+                    for i in range(1, len(row)):
+                        val = row.iloc[i]
+                        if pd.notnull(val) and not isinstance(val, str):
+                            alpha = 0.08 + (val * 0.4) if base_rgb == "255, 193, 7" else 0.12 + (val * 0.55)
+                            txt = "white" if alpha > 0.45 else "black"
+                            colors[i] = f"background-color: rgba({base_rgb}, {alpha}); color: {txt};"
+                return colors
+
+            styled_df = styled_df.apply(apply_grid_styling, axis=1)
+
+            st.markdown(f"**{title}**")
             st.dataframe(
-                profile_df.map(format_rolling),
+                styled_df,
                 width="stretch",
+                height=425,
+                hide_index=True,
+                key=f"rolling_table_{key_suffix}",
                 column_config={
-                    "index": st.column_config.TextColumn("Returns Statistic", width="medium"),
-                    "1 Year": st.column_config.TextColumn(help="Rolling 1-Year annualized returns.", width="small"),
-                    "3 Years": st.column_config.TextColumn(help="Rolling 3-Year annualized returns.", width="small"),
-                    "5 Years": st.column_config.TextColumn(help="Rolling 5-Year annualized returns.", width="small"),
+                    "Metric": st.column_config.TextColumn("Outcome Scenarios", width=None),
                 },
             )
-        else:
-            st.info("Insufficient history for rolling return profile (requires at least 1 year of data).")
 
-        if not deep_metrics and not bench_data.empty:
-            st.warning("Insufficient history for detailed periodic metrics.")
+        c_roll1, c_roll2 = st.columns(2)
+        with c_roll1:
+            display_rolling_grid(fund_profile, f"{selected_name}", "fund")
+        with c_roll2:
+            display_rolling_grid(bench_profile, f"{benchmark_name}", "bench")
+
+        st.caption("Trailing rolling returns calculated on a daily basis for the respective holding periods.")
 
     else:
         st.error("Historical NAV data unavailable.")
 
 else:
     st.info("👈 Enter a fund name (e.g., 'HDFC Flexi' or 'SBI Bluechip') to begin deep analysis.")
+# Cache-Bust: 2026-03-30 16:25

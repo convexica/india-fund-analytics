@@ -34,8 +34,10 @@ cookies.txt
 .streamlit/secrets.toml
 
 # Internal Project History
-project_history_and_context.md
-walkthrough.md
+internal_docs/
+implementation_plan.md
+task.md
+analysis_results.md
 
 # IDEs & System
 .vscode/

@@ -6,6 +6,10 @@ on:
     - cron: '0 1 * * *'
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
+# Institutional-Grade: Explicitly grant write permissions to push cache updates
+permissions:
+  contents: write
+
 jobs:
   prewarm:
     name: Prime Mutual Fund Cache
@@ -24,15 +28,34 @@ jobs:
         run: uv run python scripts/pre_warm_cache.py
 
       - name: Push to Data-Cache Branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # 1. Stash the generated cache outside the workspace
+          mkdir -p /tmp/managed_cache
+          # Only copy if files exist to avoid shell errors
+          if [ -d "data/cache" ] && [ "$(ls -A data/cache)" ]; then
+            cp -r data/cache/* /tmp/managed_cache/
+          fi
+
           git config --global user.name "Institutional-Bot"
           git config --global user.email "bot@convexica.com"
-          # Move to a dedicated orphan branch to keep 'main' history clean
+
+          # 2. Switch to a dedicated orphan branch and WIPE EVERYTHING
+          # This ensures a clean slate including untracked/ignored files
           git checkout --orphan data-cache
-          git rm -rf . --quiet
-          mkdir -p data/cache
-          cp -r /home/runner/work/india-fund-analytics/india-fund-analytics/data/cache/* data/cache/
+          git rm -rf . --quiet || true
+          git clean -fdx --quiet || true
+
+          # 3. Restore the cache into the orphan branch
+          if [ "$(ls -A /tmp/managed_cache)" ]; then
+            mkdir -p data/cache
+            cp -r /tmp/managed_cache/* data/cache/
+          fi
+
+          # 4. Commit and push
           git add data/cache/
           git commit -m "chore(data): Daily institutional cache refresh [skip ci]" || echo "No changes to commit"
           # Force push because this is a transient data branch
-          git push origin data-cache --force
+          # Institutional-Grade: Explicitly use token in push URL for guaranteed authorization
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}" data-cache --force

@@ -3,8 +3,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-from app.core.logger import get_logger
+from core.logger import get_logger
 
 # Initialize professional logger
 logger = get_logger(__name__)
@@ -242,6 +241,68 @@ class MFAnalytics:
         return {"upside": upside_ratio * 100, "downside": downside_ratio * 100}
 
     @st.cache_data(show_spinner=False)
+    def calculate_stress_performance(_self, fund_nav: pd.Series, bench_nav: pd.Series) -> pd.DataFrame:
+        """
+        Calculate and return peak-to-trough performance during historical market stress events.
+        Dynamically handles funds that might not have existed during older crises (like 2008).
+        """
+        scenarios = [
+            {"Name": "2024-25 Market Correction", "Start": "2024-09-27", "End": "2025-04-01"},
+            {"Name": "2022 Global Tightening", "Start": "2021-10-18", "End": "2022-06-17"},
+            {"Name": "COVID-19 Crash", "Start": "2020-02-19", "End": "2020-03-23"},
+            {"Name": "2018 Broad Market Correction", "Start": "2018-01-15", "End": "2018-10-26"},
+            {"Name": "2008 Financial Crisis", "Start": "2008-01-08", "End": "2009-03-09"},
+        ]
+
+        df = pd.DataFrame({"Fund": fund_nav, "Benchmark": bench_nav}).dropna()
+        if df.empty:
+            return pd.DataFrame()
+
+        results = []
+        for cr in scenarios:
+            s_dt = pd.to_datetime(cr["Start"])
+            e_dt = pd.to_datetime(cr["End"])
+
+            # Data Validation: Only run if fund and bench have history before crisis starts
+            # Adding a tiny buffer (30 days) to prevent edge cases for newly launched funds
+            if df.index[0] > (s_dt - pd.Timedelta(days=30)):
+                continue
+
+            try:
+                # Find accurate trading days closest to the target bounds
+                start_mask = df.index >= s_dt
+                if not start_mask.any():
+                    continue
+                start_real = df.index[start_mask][0]
+
+                end_mask = df.index <= e_dt
+                if not end_mask.any():
+                    continue
+                end_real = df.index[end_mask][-1]
+
+                if start_real >= end_real:
+                    continue
+
+                f_start, f_end = df.loc[start_real, "Fund"], df.loc[end_real, "Fund"]
+                b_start, b_end = df.loc[start_real, "Benchmark"], df.loc[end_real, "Benchmark"]
+
+                f_ret = (f_end / f_start) - 1
+                b_ret = (b_end / b_start) - 1
+
+                # Calculate Downside Capture. If benchmark positive (rare in crisis), report N/A
+                capture = (f_ret / b_ret) if b_ret < 0 else None
+
+                results.append(
+                    {"Crisis": cr["Name"], "Period": f"{start_real.strftime('%b %Y')} - {end_real.strftime('%b %Y')}", "Fund Drop": f_ret, "Benchmark Drop": b_ret, "Capture Ratio": capture}
+                )
+            except Exception as e:
+                logger.warning(f"Error calculating stress scenario for {cr['Name']}: {e}")
+                continue
+
+        # Sort by most recent crisis first
+        return pd.DataFrame(results)
+
+    @st.cache_data(show_spinner=False)
     def calculate_alpha_beta(_self, fund_nav: pd.Series, benchmark_nav: Union[pd.Series, pd.DataFrame], rf_rate: Optional[float] = None) -> Dict[str, float]:
         """
         Calculate Alpha and Beta using Linear Regression on daily excess returns.
@@ -318,10 +379,10 @@ class MFAnalytics:
     def calculate_rolling_return_profile(_self, nav_series: pd.Series) -> Dict[str, Any]:
         """Generate statistical profiles for standard rolling horizons."""
         profile: Dict[str, Any] = {}
-        horizons = {1: "1 Year", 3: "3 Years", 5: "5 Years"}
+        horizons = {1: "1 Year", 3: "3 Years", 5: "5 Years", 7: "7 Years", 10: "10 Years"}
 
         for yrs, label in horizons.items():
-            rolling = _self.calculate_rolling_returns(nav_series, window_years=yrs)
+            rolling = _self.calculate_rolling_returns(nav_series, window_years=yrs).dropna()
             if rolling.empty:
                 profile[label] = None
                 continue
@@ -330,7 +391,9 @@ class MFAnalytics:
                 "Minimum": rolling.min(),
                 "Median": rolling.median(),
                 "Maximum": rolling.max(),
-                "% times -ve returns": (rolling < 0).mean(),
+                "% times returns < -20%": (rolling < -0.20).mean(),
+                "% times returns -20% to -10%": ((rolling >= -0.20) & (rolling < -0.10)).mean(),
+                "% times returns -10% - 0%": ((rolling >= -0.10) & (rolling < 0.00)).mean(),
                 "% times returns 0 - 5%": ((rolling >= 0.00) & (rolling < 0.05)).mean(),
                 "% times returns 5 - 10%": ((rolling >= 0.05) & (rolling < 0.10)).mean(),
                 "% times returns 10 - 15%": ((rolling >= 0.10) & (rolling < 0.15)).mean(),
