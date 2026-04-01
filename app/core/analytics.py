@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -343,13 +343,17 @@ class MFAnalytics:
         correlation = np.corrcoef(b_excess, f_excess)[0, 1]
         r_squared = correlation**2
 
-        # Information Ratio
+        # Information Ratio (Institutional Daily-Annualized)
         active_returns = f_ret - b_ret
         tracking_error = active_returns.std() * np.sqrt(252)
         info_ratio = (active_returns.mean() * 252) / tracking_error if tracking_error != 0 else 0
 
-        # Batting Average
-        batting_avg = (f_ret > b_ret).mean() * 100
+        # Batting Average (Institutional Monthly Consistency)
+        monthly_df = df.resample("ME").last().pct_change(fill_method=None).dropna()
+        if not monthly_df.empty:
+            batting_avg = (monthly_df["fund"] > monthly_df["bench"]).mean() * 100
+        else:
+            batting_avg = 0.0
 
         return {"alpha": alpha_annual, "beta": beta, "r_squared": r_squared, "info_ratio": info_ratio, "batting_average": batting_avg}
 
@@ -376,8 +380,8 @@ class MFAnalytics:
         return returns
 
     @st.cache_data(show_spinner=False)
-    def calculate_rolling_return_profile(_self, nav_series: pd.Series) -> Dict[str, Any]:
-        """Generate statistical profiles for standard rolling horizons."""
+    def calculate_rolling_return_profile(_self, nav_series: pd.Series, bench_nav_series: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """Generate statistical profiles for standard rolling horizons including Outperformance."""
         profile: Dict[str, Any] = {}
         horizons = {1: "1 Year", 3: "3 Years", 5: "5 Years", 7: "7 Years", 10: "10 Years"}
 
@@ -387,10 +391,20 @@ class MFAnalytics:
                 profile[label] = None
                 continue
 
+            # Calculate Outperformance frequency if benchmark is provided
+            outperf_pct = 0.0
+            if bench_nav_series is not None:
+                bench_rolling = _self.calculate_rolling_returns(bench_nav_series, window_years=yrs).dropna()
+                # Align both series to find common periods
+                common_ix = rolling.index.intersection(bench_rolling.index)
+                if not common_ix.empty:
+                    outperf_pct = (rolling[common_ix] > bench_rolling[common_ix]).mean()
+
             profile[label] = {
                 "Minimum Return": rolling.min(),
                 "Median Return": rolling.median(),
                 "Maximum Return": rolling.max(),
+                "Outperformance": outperf_pct,
                 "% times returns   < -20%": (rolling < -0.20).mean(),
                 "% times returns   -20% to -10%": ((rolling >= -0.20) & (rolling < -0.10)).mean(),
                 "% times returns   -10% to 0%": ((rolling >= -0.10) & (rolling < 0.00)).mean(),
@@ -430,6 +444,8 @@ class MFAnalytics:
                     ab = self.calculate_alpha_beta(subset, b_subset)
                     rm = self.calculate_risk_metrics(subset)
                     cap = self.calculate_capture_ratios(subset, b_subset)
+                    _, mdd = self.calculate_drawdowns(subset)
+
                     ratios = {
                         "Alpha": ab["alpha"],
                         "Beta": ab["beta"],
@@ -438,12 +454,14 @@ class MFAnalytics:
                         "BattingAvg": ab.get("batting_average", 0),
                         "Sharpe": rm.get("sharpe_ratio", 0),
                         "Sortino": rm.get("sortino_ratio", 0),
-                        "DownsideDev": rm.get("downside_deviation", 0),
+                        "Volatility": ann_vol,
+                        "MaxDrawdown": mdd,
                         "Calmar": rm.get("calmar_ratio", 0),
                         "Omega": rm.get("omega_ratio", 0),
                         "Hurst": rm.get("hurst_exponent", 0.5),
                         "Upside": cap["upside"],
                         "Downside": cap["downside"],
+                        "CaptureRatio": (cap["upside"] / cap["downside"]) if cap.get("downside", 0) != 0 else 0,
                     }
 
             return ann_ret, ann_vol, ratios
@@ -457,3 +475,77 @@ class MFAnalytics:
             return pd.DataFrame()
         result = df.resample("ME").last().pct_change(fill_method=None).dropna()
         return result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)
+
+    def generate_ai_report_markdown(self, fund_name: str, benchmark_name: str, deep_metrics: List[dict], rolling_profiles: dict, stress_df: Optional[pd.DataFrame] = None) -> str:
+        """Generates a structured professional markdown report designed for AI synthesis."""
+        if stress_df is None:
+            stress_df = pd.DataFrame()
+
+        report = [
+            "# ROLE",
+            "You are a Senior Quantitative Investment Analyst specializing in Portfolio Management "
+            "and Fiduciary Oversight. Your expertise lies in decoding complex fund "
+            "forensics to provide actionable risk-adjusted performance evaluations for investment "
+            "committees.",
+            "\n# TASK",
+            f"Analyze the provided quantitative data for the mutual fund: **{fund_name}**. You "
+            "must evaluate its performance through a rigorous analytical lens, focusing "
+            "specifically on defensive characteristics and structural return consistency relative "
+            f"to its primary benchmark: **{benchmark_name}**.",
+            "\n# ANALYTICAL PARAMETERS",
+            "1. **Capital Protection & Downside Analytics:**",
+            "    * **Drawdown Profile:** Analyze Magnitude, Time underwater, and Recovery.",
+            "    * **Capture Ratios:** Evaluate Upside/Downside; focus on Downside Efficiency.",
+            "2. **Return Consistency (Rolling Profile):**",
+            "    * **Rolling Returns:** Analyze 3Y and 5Y windows for persistence.",
+            "    * **Outperformance Probability:** Calculate frequency of benchmark-beating periods.",
+            "3. **Risk-Adjusted Efficiency:**",
+            "    * Synthesize Sharpe, Sortino, and Information Ratios to determine alpha justification vs downside volatility.",
+            "\n# DATA ASSETS",
+            "## 🏆 Performance Grid (Compounding & Efficiency)",
+            "| Period | Sharpe | Sortino | Info Ratio | Alpha | Beta | Batting Avg | Up/Down Efficiency | Upside | Downside |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+        ]
+
+        # Add all horizons from deep_metrics
+        for m in deep_metrics:
+            report.append(
+                f"| {m.get('Period', 'N/A')} | {m.get('Sharpe', 0):.2f} | {m.get('Sortino', 0):.2f} | {m.get('Info Ratio', 0):.2f} | "
+                f"{m.get('Jensen Alpha', 0):.1%} | {m.get('Beta', 0):.2f} | {m.get('Batting Avg', 0):.0%} | "
+                f"{m.get('Upside / Downside', 0):.2f} | {m.get('Upside Capture', 0):.0%} | {m.get('Downside Capture', 0):.0%} |"
+            )
+
+        # Add Rolling Profiles
+        report.extend(["\n## 🧬 Performance Consistency (Rolling Profiles)", "| Window | Median | Max | Min | Outperformance % |", "| :--- | :--- | :--- | :--- | :--- |"])
+        for label, stats in rolling_profiles.items():
+            if isinstance(stats, dict):
+                report.append(
+                    f"| {label} | {stats.get('Median Return', 0):.1%} | {stats.get('Maximum Return', 0):.1%} | " f"{stats.get('Minimum Return', 0):.1%} | {stats.get('Outperformance', 0):.0%} |"
+                )
+
+        # Add Stress Scenarios
+        report.extend(["\n## 🛡️ Historical Resilience (Market Stress Scenarios)", "| Crisis Event | Fund Performance | Benchmark | Capture Ratio |", "| :--- | :--- | :--- | :--- |"])
+        if not stress_df.empty:
+            for _, row in stress_df.iterrows():
+                cap_val = row.get("Capture Ratio", "-")
+                cap_str = f"{cap_val:.2f}" if isinstance(cap_val, (int, float)) else "-"
+                report.append(f"| {row['Crisis']} | {row['Fund Drop']:.1%} | {row['Benchmark Drop']:.1%} | {cap_str} |")
+        else:
+            report.append("| No history for major crises | - | - | - |")
+
+        report.extend(
+            [
+                "\n# CONSTRAINTS & RIGOR",
+                "* **Tone:** Professional, objective, and technical.",
+                "* **Evidence-Based:** Supporting claims with provided data points.",
+                "* **Risk Focus:** Focus on Portfolio Characteristics, Liquidity, and Fiduciary Suitability.",
+                "\n# OUTPUT STRUCTURE",
+                "1. **Executive Summary:** A 2-sentence high-level verdict.",
+                "2. **Quantitative Breakdown:** Sub-sections on Defensive Fortitude and Structural Consistency.",
+                "3. **Tactical Actionables:** Exactly 3 high-impact recommendations.",
+                "\n---",
+                "**Analyst Task:** Decipher the data above and generate the Performance Evaluation Report.",
+            ]
+        )
+
+        return "\n".join(report)

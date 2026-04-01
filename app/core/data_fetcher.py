@@ -13,7 +13,7 @@ from core.logger import get_logger, log_event
 # Setup professional logger
 logger = get_logger(__name__)
 
-# Institutional Registry: High-Priority Fund Codes for Cache Pre-warming
+# Production Registry: High-Priority Fund Codes for Cache Pre-warming
 # STRICT: Only Direct Plan - Growth options included to minimize tracking error
 TOP_FUNDS_REGISTRY = {
     "122639": "Parag Parikh Flexi Cap Fund - Direct Growth",

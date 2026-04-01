@@ -2,7 +2,7 @@ import os
 import sys
 import time
 
-# Institutional-Grade: Robust Path Resolution for Local & Cloud Environments
+# Professional-Grade: Robust Path Resolution for Local & Cloud Environments
 root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 app_dir = os.path.join(root_dir, "app")
 
@@ -21,7 +21,7 @@ def main():
     fetcher = MFDataFetcher()
     total = len(TOP_FUNDS_REGISTRY)
 
-    logger.info(f"Starting Institutional Cache Pre-warm for {total} funds...")
+    logger.info(f"Starting Professional Cache Pre-warm for {total} funds...")
 
     success_count = 0
     fail_count = 0

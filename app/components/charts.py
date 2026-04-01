@@ -104,9 +104,22 @@ def plot_capture_ratios(capture_dict):
     categories = ["Upside Capture", "Downside Capture"]
     values = [capture_dict["upside"], capture_dict["downside"]]
 
-    fig = go.Figure(data=[go.Bar(x=categories, y=values, marker_color=["#2ca02c", "#d62728"])])
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=categories,
+                y=values,
+                marker_color=["#2ca02c", "#d62728"],
+                text=[f"{v:.0f}%" for v in values],
+                textposition="inside",
+                insidetextanchor="start",  # Move to base to avoid 100% line collision
+                textfont=dict(color="white", weight="bold", size=15),
+            )
+        ]
+    )
 
-    fig.add_hline(y=100, line_dash="dash", line_color="black")
+    # Institutional Baseline: Dashed Orange for Benchmark (100%)
+    fig.add_hline(y=100, line_dash="dash", line_color="#ff7f0e", line_width=1.5)
 
     fig.update_layout(
         title=dict(text="Market Capture Ratios (%)", font=dict(size=18)),
@@ -140,6 +153,8 @@ def plot_stress_scenarios(stress_df: pd.DataFrame) -> go.Figure:
         labels={"Type": ""},
         hover_data={"Period": True},
     )
+    # High-contrast labels for professional legibility
+    fig.update_traces(textposition="inside", textfont=dict(color="white", weight="bold"))
     fig.update_layout(
         title=dict(text="Historical Stress Scenarios", font=dict(size=18)),
         template="plotly_white",

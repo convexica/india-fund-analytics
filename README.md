@@ -1,8 +1,8 @@
-# 📈 India Fund Analytics
+# 🔬 ConvexLab
 
-A high-performance, institutional-grade quantitative analysis dashboard for Indian Mutual Funds. Evaluate performance, risk, and consistency using advanced financial metrics.
+A high-performance, professional quantitative analysis dashboard for Indian Mutual Funds. Evaluate performance, risk, and consistency using advanced financial metrics.
 
-> **Live Demo**: [india-fund-analytics.streamlit.app](https://india-fund-analytics.streamlit.app/)
+> **Live Demo**: [convexlab.streamlit.app](https://convexlab.streamlit.app/)
 
 ---
 
@@ -11,7 +11,8 @@ A high-performance, institutional-grade quantitative analysis dashboard for Indi
 *   **Deep Performance Analysis**: Calculate CAGR, Absolute Growth, and Multiplier across multiple time horizons (1Y, 3Y, 5Y, 10Y, Max).
 *   **Risk & Efficiency**: Compute advanced risk-adjusted metrics like **Sharpe Ratio**, **Sortino Ratio**, **Calmar Ratio**, and **Omega Ratio**.
 *   🛡️ **Advanced Historical Stress-Testing**: Evaluate fund resilience during the **2024-25 (Market Correction)**, 2022 (Bear Market), COVID-19 Crash, 2018 NBFC Crisis, and the 2008 GFC.
-*   📊 **Convexica-branded Institutional UI**: High-density interactive dashboard optimized for deep risk-return analysis with Deep Navy & Gold aesthetics.
+*   🧠 **AI Insight Agent**: Generate structured analytical reports optimized for synthesis across AI platforms (ChatGPT, Claude, Gemini).
+*   📊 **Convexica-branded Professional UI**: High-density interactive dashboard optimized for deep risk-return analysis with Deep Navy & Gold aesthetics.
 *   **Market Character**: Identify fund style using **Beta**, **Jensen's Alpha**, and **Information Ratio** against benchmarks (Nifty 50, Nifty 500).
 *   **Capture Dynamics**: Analyze **Upside & Downside Capture Ratios** and **Market Sensitivity** (OLS Trendlines) to understand behavior in varying market conditions.
 *   **Rolling Returns**: Generate detailed rolling return profiles illustrating the probability of beating bank FDs and the frequency of negative returns.
@@ -66,7 +67,7 @@ python -m venv venv
 ### 2. Install Dependencies
 Professional installations can use **`uv`** (recommended) for perfect reproducibility, or standard `pip`:
 ```bash
-# Institutional Standard (Perfectly reproducible)
+# Production Standard (Perfectly reproducible)
 uv sync
 
 # Legacy Standard (Standard install)
@@ -104,7 +105,7 @@ streamlit run app/main.py
 ├── scripts/
 │   └── wake_app.py          # Streamlit Cloud keep-alive automation
 ├── internal_docs/
-│   └── DEVELOPMENT_GUIDELINES.md # 🏛️ Architectural Laws (MUST READ)
+│   └── DEVELOPMENT_GUIDELINES.md # 🏗️ Architectural Laws (MUST READ)
 ├── pyproject.toml           # Modern Project Configuration (PEP 621)
 ├── requirements.txt         # Consolidated Dependencies
 └── LICENSE                  # MIT License

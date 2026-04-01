@@ -1,6 +1,6 @@
 [project]
 name = "india-fund-analytics"
-version = "0.1.4"
+version = "0.2.0"
 description = "A high-performance quantitative analysis dashboard for Indian Mutual Funds."
 authors = [
     {name = "Convexica", email = "app@convexica.com"}
@@ -30,7 +30,7 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://india-fund-analytics.streamlit.app/"
+"Homepage" = "https://convexlab.streamlit.app/"
 "Repository" = "https://github.com/convexica/india-fund-analytics"
 
 [tool.ruff]

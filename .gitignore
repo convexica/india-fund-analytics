@@ -18,7 +18,7 @@ venv/
 env/
 ENV/
 
-# Data & Documents (Institutional Cache Enabled)
+# Data & Documents (Professional Cache Enabled)
 data/*
 !data/cache/
 data/cache/*

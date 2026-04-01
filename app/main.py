@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 import streamlit as st
 
-# Institutional-Grade: Robust Path Resolution for Local & Cloud Environments
+# Professional-Grade: Robust Path Resolution for Local & Cloud Environments
 root_dir = os.path.dirname(os.path.abspath(__file__))
 if root_dir not in sys.path:
     sys.path.append(root_dir)
@@ -30,14 +30,14 @@ from core.logger import get_logger, log_event  # noqa: E402
 logger = get_logger(__name__)
 
 # Page Configuration
-st.set_page_config(page_title="India Fund Analytics", page_icon="📈", layout="wide")
+st.set_page_config(page_title="ConvexLab | Performance Analytics", page_icon="🔬", layout="wide")
 
 st.markdown(
     """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Surgical Typography Override - Replaces Global Force to fix Icon breaking */
+    /* Professional Typography Override - Replaces Global Force to fix Icon breaking */
     [data-testid="stHeader"], [data-testid="stSidebar"], .stMarkdown, .stMetric, .stSelectbox, .stTextInput, .stRadio, .stTab, .st-at, .st-ae {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
     }
@@ -110,7 +110,7 @@ st.markdown(
     }
 
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        padding-top: 1.5rem !important;
+        padding-top: 0.2rem !important;
         gap: 0.8rem;
     }
     </style>
@@ -121,21 +121,24 @@ st.markdown(
 
 @st.cache_resource(show_spinner="Initializing Analytics Engine...")
 def get_analytics_toolkit() -> Tuple[MFDataFetcher, MFAnalytics]:
-    """Force-initialize the analytical suite - Cache-breaker v2."""
+    """Force-initialize the analytical suite - Cache-breaker v2.2.0."""
     return MFDataFetcher(), MFAnalytics()
 
 
 fetcher, analytics = get_analytics_toolkit()
-Riverside_Cache_Breaker = "2.1.0"
+Riverside_Cache_Breaker = "2.3.0"
 
 # Sidebar - Search and Selection
 with st.sidebar:
-    # Custom styled Title to bypass default h1 margins
-    st.markdown("<h1 style='margin-top: -2.5rem; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.2rem;'>📈 Fund Analytics</h1>", unsafe_allow_html=True)
-    st.caption("Convexica: Mutual Fund Intelligence")
+    # Professional Identity: 🔬 ConvexLab
+    st.markdown("<h1 style='margin-top: 15px; font-size: 1.6rem; font-weight: 700; margin-bottom: 0px;'>🔬 ConvexLab</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 0.85rem; color: #94a3b8; font-weight: 500; margin-top: -5px; margin-bottom: 5px;'>Portfolio Intelligence and Analytics</p>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.header("🎯 Asset Selection")
+    # High-Density Headers: Harmonized Spacing
+    st.markdown(
+        "<p style='border-top: 1px solid rgba(255,255,255,0.1); margin-top: 25px; " "padding-top: 10px; font-weight: 700; font-size: 1.1rem;'>🎯 Asset Selection</p>",
+        unsafe_allow_html=True,
+    )
 
     # Fund Discovery
     st.markdown("**1. Primary Mutual Fund**")
@@ -180,9 +183,11 @@ with st.sidebar:
                 benchmark_name = st.selectbox("Select", options=list(bench_results.values()), label_visibility="collapsed")
                 benchmark_code = [k for k, v in bench_results.items() if v == benchmark_name][0]
 
-    st.markdown("---")
-    # Analysis Window (When)
-    st.header("⏳ Horizon")
+    # Horizon Horizon Selection
+    st.markdown(
+        "<p style='border-top: 1px solid rgba(255,255,255,0.1); margin-top: 25px; " "padding-top: 10px; font-weight: 700; font-size: 1.1rem;'>⏳ Horizon</p>",
+        unsafe_allow_html=True,
+    )
     analysis_period = st.radio("Period", ["All Time", "1 Year", "3 Years", "5 Years", "10 Years", "Custom Range"], index=0, label_visibility="collapsed")
 
     import datetime
@@ -196,25 +201,33 @@ with st.sidebar:
             custom_start_date = st.date_input("Start", value=pd.to_datetime("2020-01-01"))
         with c2:
             custom_end_date = st.date_input("End", value=pd.to_datetime("today"))
-    else:
-        pass
 
-    st.markdown("---")
     # Technical Calibration (How)
-    st.header("⚙️ Calibration")
+    st.markdown(
+        "<p style='border-top: 1px solid rgba(255,255,255,0.1); margin-top: 25px; " "padding-top: 10px; font-weight: 700; font-size: 1.1rem;'>⚙️ Calibration</p>",
+        unsafe_allow_html=True,
+    )
     # Fetch real-time rate for initial calibration (fallback to 6.5)
     default_rf = fetcher.get_current_risk_free_rate() * 100
     risk_free_rate = st.slider("Risk-Free Rate (%)", 0.0, 10.0, default_rf, 0.1) / 100
     analytics.rf = risk_free_rate
 
     st.markdown("---")
-    if st.button("♻️ Force System Refresh", use_container_width=True, help="Clears entire system cache and reloads all data. Use only if experiencing stale data."):
-        st.cache_data.clear()
+    if st.sidebar.button("♻️ Refresh System"):
         st.cache_resource.clear()
         st.rerun()
 
 # Main Content
 if selected_code:
+    # Initialize variables for reliable AI/UI data sharing
+    ret_data: Dict[str, float] = {}
+    risk_metrics: Dict[str, float] = {}
+    cap_metrics: Dict[str, float] = {}
+    stress_res = pd.DataFrame()
+
+    # Secure Fresh State: Reset temporary analytics vault
+    st.session_state["period_ratios"] = {}
+
     with st.spinner(f"Analyzing {selected_name}..."):
         try:
             raw_nav_data = fetcher.get_nav_history(selected_code)
@@ -337,6 +350,7 @@ if selected_code:
         # 2.5 Historical Stress Scenarios (Historical Resilience)
         if not raw_bench_data.empty:
             stress_df = analytics.calculate_stress_performance(raw_nav_data["nav"], raw_bench_data)
+            stress_res = stress_df.to_dict("records")  # Archive for AI synthesis
             if not stress_df.empty:
                 # Visualize the stress test via component
                 st.plotly_chart(plot_stress_scenarios(stress_df), width="stretch", key="stress_scenarios_chart")
@@ -409,7 +423,7 @@ if selected_code:
 
         # Performance Analysis Data Prep
         periods = {"1 Year": 1, "3 Years": 3, "5 Years": 5, "10 Years": 10}
-        ret_data, vol_data, ratio_data, deep_metrics = [], [], [], []
+        ret_metrics_list, vol_data, ratio_data, deep_metrics = [], [], [], []
 
         for label, yrs in periods.items():
             f_ret, f_vol, f_stats = analytics.get_periodic_metrics(raw_nav_data["nav"], yrs, raw_bench_data)
@@ -420,8 +434,16 @@ if selected_code:
                 b_ret, b_vol, _ = analytics.get_periodic_metrics(raw_bench_data, yrs)
 
             # Data for compact sections
-            ret_data.append({"Period": label, "Fund": f_ret, "Benchmark": b_ret})
+            ret_metrics_list.append({"Period": label, "Fund": f_ret, "Benchmark": b_ret})
             vol_data.append({"Period": label, "Fund": f_vol, "Benchmark": b_vol})
+
+            # Populate the AI dictionary
+            ret_data[label] = f_ret if f_ret else 0.0
+
+            # Archive the rich ratio data for the AI Agent
+            if "period_ratios" not in st.session_state:
+                st.session_state["period_ratios"] = {}
+            st.session_state["period_ratios"][label] = f_stats if f_stats else {}
 
             f_rat = (f_ret / f_vol) if f_ret and f_vol else None
             b_rat = (b_ret / b_vol) if b_ret and b_vol else None
@@ -431,17 +453,17 @@ if selected_code:
                 deep_metrics.append(
                     {
                         "Period": label,
-                        "Jensen Alpha": f"{f_stats['Alpha']:.1%}",
-                        "Beta": f"{f_stats['Beta']:.2f}",
-                        "Sharpe": f"{f_stats['Sharpe']:.2f}",
-                        "Sortino": f"{f_stats['Sortino']:.2f}",
-                        "Calmar": f"{f_stats['Calmar']:.2f}",
-                        "Info Ratio": f"{f_stats['InfoRatio']:.2f}",
-                        "Batting Avg": f"{f_stats['BattingAvg']:.0f}%",
-                        "Omega": f"{f_stats['Omega']:.2f}",
-                        "Hurst (H)": f"{f_stats['Hurst']:.2f}",
-                        "Upside Capture": f"{f_stats['Upside']:.0f}%",
-                        "Downside Capture": f"{f_stats['Downside']:.0f}%",
+                        "Sharpe": f_stats.get("Sharpe", 0),
+                        "Sortino": f_stats.get("Sortino", 0),
+                        "Calmar": f_stats.get("Calmar", 0),
+                        "Info Ratio": f_stats.get("InfoRatio", 0),
+                        "Omega": f_stats.get("Omega", 0),
+                        "Beta": f_stats.get("Beta", 0),
+                        "Jensen Alpha": f_stats.get("Alpha", 0),
+                        "Batting Avg": f_stats.get("BattingAvg", 0) / 100.0,
+                        "Upside / Downside": f_stats.get("CaptureRatio", 0),
+                        "Upside Capture": f_stats.get("Upside", 0) / 100.0,
+                        "Downside Capture": f_stats.get("Downside", 0) / 100.0,
                     }
                 )
 
@@ -466,6 +488,7 @@ if selected_code:
                     "Fund": st.column_config.TextColumn("Fund", width=100),
                     "Benchmark": st.column_config.TextColumn("Benchmark", width=100),
                 }
+
                 if title == "Periodic Returns":
                     help_text = "Annualized performance over the specific window."
                 elif title == "Periodic Volatility":
@@ -475,11 +498,12 @@ if selected_code:
 
                 config["Fund"] = st.column_config.TextColumn("Fund", help=help_text, width=100)
                 st.dataframe(display_df, hide_index=True, width="stretch", column_config=config)
+
             with col_cht:
                 fig = plot_periodic_metrics(df, is_pct=is_pct, y_label=y_label)
                 st.plotly_chart(fig, width="stretch", key=f"bar_{title.lower().replace(' ', '_')}")
 
-        display_metric_section("Periodic Returns", ret_data)
+        display_metric_section("Periodic Returns", ret_metrics_list)
         display_metric_section("Periodic Volatility", vol_data)
         display_metric_section("Return / Risk Ratio", ratio_data, is_pct=False)
 
@@ -491,7 +515,7 @@ if selected_code:
                 df_monthly = analytics.get_monthly_returns(nav_data["nav"], bench_data)
                 fig_scatter = plot_market_sensitivity(df_monthly, benchmark_name)
                 st.plotly_chart(fig_scatter, width="stretch", key="market_sensitivity_scatter")
-                st.info("**Interpretation:** Points above the **orange line** beat the Benchmark. A steeper blue line indicates **High Beta** (more aggressive than the benchmark).")
+                st.info("**Interpretation:** Points above the **orange dashed line** beat the Benchmark. A steeper blue line indicates **High Beta** (more aggressive than the benchmark).")
 
             with c2:
                 cap_metrics = analytics.calculate_capture_ratios(nav_data["nav"], bench_data)
@@ -500,48 +524,68 @@ if selected_code:
         if deep_metrics:
             df_full = pd.DataFrame(deep_metrics)
 
-            t1, t2 = st.tabs(["📊 Risk Efficiency", "🧬 Style & Consistency"])
+            st.markdown("#### 🧩 Comprehensive Analytics")
 
-            with t1:
-                # Group 1: Risk-Adjusted Efficiency
-                efficiency_cols = ["Period", "Sharpe", "Sortino", "Calmar", "Info Ratio", "Omega"]
-                st.dataframe(
-                    df_full[efficiency_cols],
-                    hide_index=True,
-                    width="stretch",
-                    column_config={
-                        "Sharpe": st.column_config.TextColumn(help="Excess return per unit of total risk. Higher is better."),
-                        "Sortino": st.column_config.TextColumn(help="Penalizes downside volatility. Ideal for skewed return profiles."),
-                        "Calmar": st.column_config.TextColumn(help="CAGR / Max Drawdown. Measures return vs 'crash' risk. Higher is better."),
-                        "Info Ratio": st.column_config.TextColumn(help="Active return vs benchmark per tracking error. Measures manager skills."),
-                        "Omega": st.column_config.TextColumn(help="Weighted gains vs losses. Considers full distribution shape."),
-                    },
-                )
-                st.caption("Insights into how efficiently the fund generates returns for every unit of risk taken.")
+            # Category Descriptions for Hover context
+            risk_efficiency_help = "Insights into how efficiently the fund generates returns for every unit of risk taken."
+            style_consistency_help = "Analysis of the fund's behavioral style, consistency, and active management character."
 
-            with t2:
-                # Group 2: Behavioral & Market Character
-                behavior_cols = ["Period", "Beta", "Jensen Alpha", "Batting Avg", "Hurst (H)", "Upside Capture", "Downside Capture"]
-                st.dataframe(
-                    df_full[behavior_cols],
-                    hide_index=True,
-                    width="stretch",
-                    column_config={
-                        "Beta": st.column_config.TextColumn(help="Market Sensitivity. 1.0 = moves with index. >1.0 Aggressive, <1.0 Defensive."),
-                        "Jensen Alpha": st.column_config.TextColumn(help="Annualized excess return above market risk expectation. High Alpha = Skill."),
-                        "Batting Avg": st.column_config.TextColumn(help="Frequency the fund beat the benchmark. Measures consistency."),
-                        "Hurst (H)": st.column_config.TextColumn(help="Trend intensity. >0.5 Persistent (Trending), <0.5 Mean-reverting."),
-                        "Upside Capture": st.column_config.TextColumn(help="Gain capture during positive months. Higher is better."),
-                        "Downside Capture": st.column_config.TextColumn(help="Loss capture during negative months. Lower is better."),
-                    },
-                )
-                st.caption("Analysis of the fund's behavioral style, consistency, and active management character.")
+            # Construct simple flat headers for high-density terminal look
+            col_list = ["Period", "Sharpe", "Sortino", "Calmar", "Info Ratio", "Omega", "Beta", "Jensen Alpha", "Batting Avg", "Upside / Downside", "Upside Capture", "Downside Capture"]
+
+            # Re-index full dataframe with flat columns
+            df_display = df_full[col_list].copy()
+
+            # Column Config: Map to actual column names for type safety
+            col_config = {
+                "Period": st.column_config.TextColumn("Period", width=80, pinned=True),
+                "Sharpe": st.column_config.TextColumn("Sharpe", help="Excess return per unit of total risk. Higher is better.", width=75),
+                "Sortino": st.column_config.TextColumn("Sortino", help="Penalizes downside volatility. Ideal for skewed return profiles.", width=75),
+                "Calmar": st.column_config.TextColumn("Calmar", help="CAGR / Max Drawdown. Measures return vs 'crash' risk.", width=75),
+                "Info Ratio": st.column_config.TextColumn("Info Ratio", help="Active return vs benchmark per tracking error.", width=105),
+                "Omega": st.column_config.TextColumn("Omega", help="Gains vs losses weighted by probability.", width=75),
+                "Beta": st.column_config.TextColumn("Beta", help="Market Sensitivity. 1.0 = moves with index. >1.0 Aggressive, <1.0 Defensive.", width=75),
+                "Jensen Alpha": st.column_config.TextColumn("Jensen Alpha", help="Annualized excess return above market expectation.", width=105),
+                "Batting Avg": st.column_config.TextColumn("Batting Avg", help="Frequency the fund beat the benchmark.", width=100),
+                "Upside / Downside": st.column_config.TextColumn("Up/Down Efficiency", help="Efficiency Ratio: Upside capture divided by Downside capture. Higher is better.", width=130),
+                "Upside Capture": st.column_config.TextColumn("Upside Capture", help="Gain capture during positive months.", width=125),
+                "Downside Capture": st.column_config.TextColumn("Downside Capture", help="Loss capture during negative months.", width=140),
+            }
+
+            # Archive for AI Synthesis vault: High-fidelity forensic metrics
+            st.session_state["deep_metrics_vault"] = deep_metrics
+
+            # Standard formatting for professional clarity without heatmapping
+            styler_df = df_display.style.format(
+                {
+                    "Period": "{}",
+                    "Sharpe": "{:.2f}",
+                    "Sortino": "{:.2f}",
+                    "Calmar": "{:.2f}",
+                    "Info Ratio": "{:.2f}",
+                    "Omega": "{:.2f}",
+                    "Beta": "{:.2f}",
+                    "Jensen Alpha": "{:.1%}",
+                    "Batting Avg": "{:.0%}",
+                    "Upside / Downside": "{:.2f}",
+                    "Upside Capture": "{:.0%}",
+                    "Downside Capture": "{:.0%}",
+                }
+            )
+
+            st.dataframe(
+                styler_df,
+                hide_index=True,
+                width="stretch",
+                column_config=col_config,
+            )
+            st.caption("Detailed analysis of active management character, risk efficiency, and return consistency across horizons.")
 
         # 4. Rolling Returns Performance
         st.markdown("### 📊 Rolling Returns Performance Profile")
 
         # Logic to extract profiles and find common horizons
-        fund_profile_raw = analytics.calculate_rolling_return_profile(raw_nav_data["nav"])
+        fund_profile_raw = analytics.calculate_rolling_return_profile(raw_nav_data["nav"], bench_nav_series=raw_bench_data)
         bench_profile_raw = analytics.calculate_rolling_return_profile(raw_bench_data) if not raw_bench_data.empty else {}
 
         # Determine common labels available for both (Intersection for consistent comparison)
@@ -638,9 +682,31 @@ if selected_code:
 
         st.caption("Trailing rolling returns calculated on a daily basis for the respective holding periods.")
 
+        # Institutional Vault: Archive results for sidebar/AI consumption
+        st.session_state["analytical_vault"] = {"name": selected_name, "benchmark": benchmark_name, "returns": ret_data, "profile": fund_profile, "stress": stress_res}
+
+        # 🧠 AI Insight Integration: Verticalized for direct user-flow
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        c_btn1, _, _, _ = st.columns(4)
+        with c_btn1:
+            if st.button("🧠 Generate AI Report", type="primary", use_container_width=True):
+                # Pass local forensic profile and stress results directly to reporter
+                ai_report = analytics.generate_ai_report_markdown(
+                    fund_name=selected_name, benchmark_name=benchmark_name, deep_metrics=deep_metrics, rolling_profiles=fund_profile, stress_df=pd.DataFrame(stress_res)
+                )
+                st.session_state["ai_report_cache"] = ai_report
+                st.toast("Report Ready!", icon="🧠")
+
+        st.info("Transform quantitative insights into a structured investment report, optimized for synthesis across AI platforms.")
+
+        if "ai_report_cache" in st.session_state:
+            st.caption("💡 **Tip:** Click the copy icon on the top-right of the box and run it in your preferred AI assistant to generate a structured investment report.")
+            st.code(st.session_state["ai_report_cache"], language="markdown")
+
     else:
         st.error("Historical NAV data unavailable.")
 
 else:
     st.info("👈 Enter a fund name (e.g., 'HDFC Flexi' or 'SBI Bluechip') to begin deep analysis.")
-# Cache-Bust: 2026-03-30 16:25
+# Cache-Bust: 2026-04-01 17:10 (Precision Sync)
