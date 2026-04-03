@@ -684,29 +684,164 @@ if selected_code:
         st.caption("Trailing rolling returns calculated on a daily basis for the respective holding periods.")
 
         # Institutional Vault: Archive results for sidebar/AI consumption
-        st.session_state["analytical_vault"] = {"name": selected_name, "benchmark": benchmark_name, "returns": ret_data, "profile": fund_profile, "stress": stress_res}
+        st.session_state["analytical_vault"] = {
+            "name": selected_name,
+            "benchmark": benchmark_name,
+            "returns": ret_data,
+            "profile": fund_profile,
+            "stress": stress_res,
+        }
 
-        # 🧠 AI Insight Integration: Verticalized for direct user-flow
+        # ═══════════════════════════════════════════════════════════════
+        # MARKET REGIME ANALYSIS (v1.2.0) — Always visible
+        # Uses Nifty 500 (^CRSLDX) as market proxy regardless of benchmark
+        # ═══════════════════════════════════════════════════════════════
+        st.markdown("### 🌐 Market Regime Analysis")
+        st.caption("Regime classification uses the **Nifty 500** as the market proxy (independent of selected benchmark).")
+
+        nifty500_nav = fetcher.get_benchmark_history("^CRSLDX", start_date=raw_nav_data.index[0])
+        regime_data: Dict[str, Any] = {}
+
+        if not nifty500_nav.empty and not nav_data["nav"].empty:
+            bench_for_regime = bench_data if not bench_data.empty else nifty500_nav
+            regime_data = analytics.classify_market_regimes(
+                market_nav=nifty500_nav,
+                fund_nav=nav_data["nav"],
+                bench_nav=bench_for_regime,
+            )
+
+        if regime_data and regime_data.get("horizons"):
+            dom = regime_data.get("dominant", "N/A")
+            dom_conf = regime_data.get("dominant_confidence", "N/A")
+
+            # Dominant regime badge
+            regime_color = {"Bull": "#16a34a", "Bear": "#dc2626", "Sideways": "#d97706"}.get(dom, "#64748b")
+            st.markdown(
+                f"<p style='margin-bottom:10px;'>Current Market Regime (12M): "
+                f"<span style='background:{regime_color};color:#fff;padding:3px 10px;"
+                f"border-radius:12px;font-weight:700;font-size:0.9rem;'>"
+                f"● {dom}</span> "
+                f"<span style='color:#94a3b8;font-size:0.85rem;'>({dom_conf} Confidence)</span></p>",
+                unsafe_allow_html=True,
+            )
+
+            # Regime table
+            regime_rows = []
+            for hz, hd in regime_data["horizons"].items():
+                regime_rows.append(
+                    {
+                        "Horizon": hz,
+                        "Market Regime": hd["regime"],
+                        "Confidence": hd["confidence"],
+                        "Nifty 500 Return": f"{hd['mkt_return']:.1%}",
+                        "Fund Return": f"{hd['fund_return']:.1%}" if hd.get("fund_return") is not None else "N/A",
+                        "Benchmark Return": f"{hd['bench_return']:.1%}" if hd.get("bench_return") is not None else "N/A",
+                        "Excess Return": f"{hd['excess_return']:.1%}" if hd.get("excess_return") is not None else "N/A",
+                        "Behavior": hd["behavior"],
+                    }
+                )
+            regime_df = pd.DataFrame(regime_rows)
+
+            def color_regime(val):
+                c = {"Bull": "color:#16a34a;font-weight:700", "Bear": "color:#dc2626;font-weight:700", "Sideways": "color:#d97706;font-weight:700"}.get(val, "")
+                return c
+
+            def color_behavior(val):
+                c = {"Alpha-generative": "color:#16a34a", "Defensive": "color:#60a5fa", "Outperforming": "color:#22d3ee", "Lagging": "color:#f59e0b", "Significantly Lagging": "color:#ef4444"}.get(
+                    val, ""
+                )
+                return c
+
+            st.dataframe(
+                regime_df.style.map(color_regime, subset=["Market Regime"]).map(color_behavior, subset=["Behavior"]),
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Horizon": st.column_config.TextColumn(width=70),
+                    "Market Regime": st.column_config.TextColumn(width=110),
+                    "Confidence": st.column_config.TextColumn(width=100),
+                },
+            )
+        else:
+            st.info("Insufficient Nifty 500 history to compute regime classification.")
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROPRIETARY METRICS COMPUTATION (v1.2.0)
+        # Computed before AI generation so they are injected as hard numbers
+        # ═══════════════════════════════════════════════════════════════
+        proprietary_metrics: Dict[str, Any] = {}
+        if deep_metrics and fund_profile:
+            # Use 3Y data as primary; fall back to 1Y
+            primary = next((m for m in deep_metrics if "3" in m.get("Period", "")), deep_metrics[0])
+            upside_cap = primary.get("Upside Capture", 0) / 100
+            downside_cap = primary.get("Downside Capture", 1) / 100
+            info_ratio = primary.get("Info Ratio", 0)
+            cagr_val = primary.get("CAGR", metrics.get("cagr", 0))
+
+            # Rolling returns for consistency metrics
+            rolling_3y = analytics.calculate_rolling_returns(raw_nav_data["nav"], window_years=3).dropna()
+            outperf_pct = list(fund_profile.values())[0].get("Outperformance", 0.5) if fund_profile else 0.5
+
+            proprietary_metrics = {
+                "convexity_score": analytics.calculate_convexity_score(upside_cap, downside_cap, rolling_3y),
+                "alpha_quality": analytics.calculate_alpha_quality_score(info_ratio, outperf_pct),
+                "der": analytics.calculate_drawdown_efficiency_ratio(cagr_val, max_dd),
+                "consistency_index": analytics.calculate_consistency_index(outperf_pct, rolling_3y),
+            }
+
+        # ═══════════════════════════════════════════════════════════════
+        # PROPRIETARY METRICS DISPLAY (v1.2.0)
+        # ═══════════════════════════════════════════════════════════════
+        if proprietary_metrics:
+            st.markdown("### 🔢 Proprietary Metrics")
+            pm_cols = st.columns(4)
+            pm_defs = [
+                ("Convexity Score", "convexity_score", "ratio", "label", "Upside/Downside capture asymmetry × stability"),
+                ("Alpha Quality", "alpha_quality", "score", "label", "Composite of IR, outperformance frequency & persistence (0–10)"),
+                ("Drawdown Efficiency", "der", "score", "label", "CAGR / Max Drawdown — capital efficiency under stress"),
+                ("Consistency Index", "consistency_index", "score", "label", "Repeatability of outperformance (0–100)"),
+            ]
+            for col, (title, key, val_field, label_field, _tip) in zip(pm_cols, pm_defs, strict=False):
+                pm = proprietary_metrics.get(key, {})
+                val = pm.get(val_field, "—")
+                lbl = pm.get(label_field, "")
+                suffix = "/10" if "Alpha" in title else "/100" if "Consistency" in title else ""
+                col.markdown(
+                    f"<div style='background:#1e293b;border:1px solid rgba(212,175,55,0.3);"
+                    f"border-radius:10px;padding:14px 16px;height:120px;'>"
+                    f"<p style='color:#94a3b8;font-size:0.75rem;margin:0 0 4px;'>{title}</p>"
+                    f"<p style='color:#d4af37;font-size:1.6rem;font-weight:700;margin:0;'>"
+                    f"{val}{suffix}</p>"
+                    f"<p style='color:#e2e8f0;font-size:0.75rem;margin:4px 0 0;'>● {lbl}</p>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+        # ═══════════════════════════════════════════════════════════════
+        # AI INSIGHT INTEGRATION (v1.2.0)
+        # ═══════════════════════════════════════════════════════════════
         st.markdown("<br>", unsafe_allow_html=True)
-
-        st.info("Transform quantitative insights into a structured investment report.")
+        st.info("Generate a CIO-grade institutional investment memo powered by the AI Synthesis Engine.")
 
         c_btn1, _, _, _ = st.columns(4)
         with c_btn1:
             if st.button("🧠 Generate AI Report", type="primary", use_container_width=True):
-                # 1. Generate the Quantitative Briefing
                 briefing = analytics.generate_ai_report_markdown(
-                    fund_name=selected_name, benchmark_name=benchmark_name, deep_metrics=deep_metrics, rolling_profiles=fund_profile, stress_df=pd.DataFrame(stress_res)
+                    fund_name=selected_name,
+                    benchmark_name=benchmark_name,
+                    deep_metrics=deep_metrics,
+                    rolling_profiles=fund_profile,
+                    stress_df=pd.DataFrame(stress_res),
+                    proprietary_metrics=proprietary_metrics,
+                    regime_data=regime_data,
                 )
                 st.session_state["ai_report_briefing"] = briefing
 
-                # 2. Attempt Live Synthesis
-                # 2. Attempt Live Synthesis – use a placeholder so the caption disappears after completion
                 placeholder = st.empty()
                 placeholder.caption("🔬 Analyst is synthesizing forensics...")
                 live_report = analytics.generate_live_report(briefing)
                 st.session_state["live_ai_report"] = live_report
-                placeholder.empty()  # remove the caption
+                placeholder.empty()
                 st.toast("Analysis Complete!", icon="✅")
 
         if "ai_report_briefing" in st.session_state:
@@ -715,17 +850,23 @@ if selected_code:
                 st.code(st.session_state["ai_report_briefing"], language="markdown")
 
         if "live_ai_report" in st.session_state:
-            # v1.1.0 UPGRADE: DETERMINISTIC UI RENDERER
-            # ----------------------------------------
-            # Implements a fail-safe analytical parser that decouples synthesis from styling.
-            # 1. Parsing: Extracts high-conviction content via institutional tags ([SUMMARY], etc.).
-            # 2. Quiet Luxury Styling: Injects state-of-the-art CSS for gold-left borders and a premium typography stack.
-            # 3. Hybrid Rendering: Combines Markdown (for body content) with HTML (for structural titles) for total UI stability.
+            # v1.2.0 UPGRADE: 7-SECTION DETERMINISTIC RENDERER
+            # Decouples AI synthesis from UI styling.
+            # Tags: [INVESTMENT_VIEW] [DIAGNOSTICS] [PROPRIETARY_METRICS]
+            #       [REGIME_ANALYSIS] [PORTFOLIO_ROLE] [ALLOCATION_GUIDANCE]
+            #       [RISK_CONSIDERATIONS]
 
-            # 🎨 Unified CSS and Content Renderer: No more "Ghost Boxes"
             raw = st.session_state["live_ai_report"]
-            sects = {"[SUMMARY]": "", "[BREAKDOWN]": "", "[ACTIONABLES]": ""}
-
+            tags = [
+                "[INVESTMENT_VIEW]",
+                "[DIAGNOSTICS]",
+                "[PROPRIETARY_METRICS]",
+                "[REGIME_ANALYSIS]",
+                "[PORTFOLIO_ROLE]",
+                "[ALLOCATION_GUIDANCE]",
+                "[RISK_CONSIDERATIONS]",
+            ]
+            sects: Dict[str, str] = {t: "" for t in tags}
             curr = None
             for line in raw.split("\n"):
                 tg = line.strip()
@@ -734,79 +875,71 @@ if selected_code:
                 elif curr:
                     sects[curr] += line + "\n"
 
-            # Clean and sanitize the sections: Convert remaining Markdown to Institutional HTML
-            def clean_sec(txt):
+            def clean_sec(txt: str) -> str:
                 lines = txt.strip().split("\n")
                 res = []
                 for line in lines:
                     cl = line.strip()
-                    # 1. Convert Bolding to Standard White Bold
                     cl = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", cl)
-
-                    # 2. Handle Universal Bullets (* or -)
                     if cl.startswith("- ") or cl.startswith("* "):
                         bullet_content = cl[2:].strip()
-
-                        # 3. If Bullet starts with Topic Header (e.g., <b>...:</b>), turn it GOLD
-                        bullet_content = re.sub(r"^<b>(.*?):<\/b>", r"<span style='color: #d4af37; font-weight: 700;'>\1:</span>", bullet_content)
-
-                        res.append(f'<div class="bullet-item"><span class="bullet-dot">•</span><span class="bullet-text">{bullet_content}</span></div>')
+                        bullet_content = re.sub(
+                            r"^<b>(.*?):<\/b>",
+                            r"<span style='color:#d4af37;font-weight:700;'>\1:</span>",
+                            bullet_content,
+                        )
+                        res.append(f'<div class="bullet-item">' f'<span class="bullet-dot">•</span>' f'<span class="bullet-text">{bullet_content}</span></div>')
                     elif cl:
                         res.append(cl)
                 return "".join(res)
 
-            # Build the Single, Atomic HTML block using a refined Institutional Layout
-            report_html = f"""<style>
-.brief-container {{
+            css = """<style>
+.brief-container {
     background-color: #1e293b;
-    padding: 30px;
+    padding: 28px 32px;
     border-radius: 12px;
-    border: 1px solid rgba(212, 175, 55, 0.2);
+    border: 1px solid rgba(212,175,55,0.2);
     border-left: 10px solid #d4af37;
     color: #e2e8f0;
-    margin-bottom: 35px;
+    margin-bottom: 20px;
     font-family: 'Inter', system-ui, sans-serif;
-}}
-.brief-header {{
+}
+.brief-header {
     color: #d4af37 !important;
     font-weight: 800 !important;
-    font-size: 1rem !important;
+    font-size: 0.85rem !important;
     margin-bottom: 6px !important;
     text-transform: uppercase;
     letter-spacing: 0.1rem;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.1);
+    border-bottom: 1px solid rgba(212,175,55,0.15);
     padding-bottom: 6px;
-}}
-.brief-content {{
-    margin-bottom: 25px !important;
-    line-height: 1.8 !important;
-    font-size: 1rem !important;
-}}
-.bullet-item {{
-    display: flex;
-    align-items: flex-start;
-    margin-bottom: 8px;
-}}
-.bullet-dot {{
-    color: #d4af37;
-    margin-right: 12px;
-    font-weight: 900;
-}}
-.bullet-text {{
-    flex: 1;
-}}
-</style>
-<div class="brief-container">
-<p class="brief-header">1. Executive Summary</p>
-<div class="brief-content">{clean_sec(sects["[SUMMARY]"])}</div>
-<p class="brief-header">2. Quantitative Breakdown</p>
-<div class="brief-content">{clean_sec(sects["[BREAKDOWN]"])}</div>
-<p class="brief-header">3. Tactical Actionables</p>
-<div class="brief-content" style="margin-bottom: 0px !important;">{clean_sec(sects["[ACTIONABLES]"])}</div>
-</div>"""
-
+}
+.brief-content { margin-bottom: 0 !important; line-height: 1.85 !important; font-size: 0.97rem !important; }
+.bullet-item { display: flex; align-items: flex-start; margin-bottom: 8px; }
+.bullet-dot { color: #d4af37; margin-right: 12px; font-weight: 900; }
+.bullet-text { flex: 1; }
+</style>"""
             st.markdown("### 📝 Investment Brief")
-            st.markdown(report_html, unsafe_allow_html=True)
+            st.markdown(css, unsafe_allow_html=True)
+
+            section_map = [
+                ("1. Investment View", "[INVESTMENT_VIEW]"),
+                ("2. Performance & Risk Diagnostics", "[DIAGNOSTICS]"),
+                ("3. Proprietary Metrics", "[PROPRIETARY_METRICS]"),
+                ("4. Regime Analysis", "[REGIME_ANALYSIS]"),
+                ("5. Portfolio Role", "[PORTFOLIO_ROLE]"),
+                ("6. Allocation Guidance", "[ALLOCATION_GUIDANCE]"),
+                ("7. Risk Considerations", "[RISK_CONSIDERATIONS]"),
+            ]
+            for title, tag in section_map:
+                content = clean_sec(sects.get(tag, ""))
+                if not content.strip():
+                    continue
+                st.markdown(
+                    f'<div class="brief-container">' f'<p class="brief-header">{title}</p>' f'<div class="brief-content">{content}</div>' f"</div>",
+                    unsafe_allow_html=True,
+                )
+
             st.markdown("<br>", unsafe_allow_html=True)
 
     else:

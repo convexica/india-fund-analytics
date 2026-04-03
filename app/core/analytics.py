@@ -479,64 +479,322 @@ class MFAnalytics:
         result = df.resample("ME").last().pct_change(fill_method=None).dropna()
         return result if isinstance(result, pd.DataFrame) else pd.DataFrame(result)
 
-    def generate_ai_report_markdown(self, fund_name: str, benchmark_name: str, deep_metrics: List[dict], rolling_profiles: dict, stress_df: Optional[pd.DataFrame] = None) -> str:
+    # ═══════════════════════════════════════════════════════════════════
+    # PROPRIETARY METRICS ENGINE (v1.2.0)
+    # ═══════════════════════════════════════════════════════════════════
+
+    def calculate_convexity_score(self, upside_capture: float, downside_capture: float, rolling_returns: pd.Series) -> Dict[str, Any]:
         """
-        AI SYNTHESIS ENGINE (v1.1.0 Upgrade)
-        -----------------------------------
-        Implements a High-Conviction "Investment Memo" framework for automated performance forensics.
+        Convexity Score = (Upside Capture / Downside Capture) × Stability Factor
+        Stability Factor = 1 / (Return Dispersion + epsilon)
+        Measures asymmetric return behaviour: >1.5 Strong, 1.0–1.5 Moderate, <1.0 Linear.
+        """
+        eps = 1e-6
+        dispersion = float(rolling_returns.std()) if not rolling_returns.empty else eps
+        stability_factor = 1.0 / (dispersion + eps)
+        dc = downside_capture if downside_capture != 0 else eps
+        raw_score = (upside_capture / dc) * stability_factor
 
-        This engine consolidates multi-dimensional quantitative data (Rolling Returns, Capture Ratios,
-        Stress Forensics) into a dense, high-signal briefing designed for LLM synthesis.
+        # Normalise to a 0–10 readable scale for display
+        score = round(min(raw_score * 10, 10.0), 2)
+        ratio = round(upside_capture / dc, 2)
 
-        Key Improvements in v1.1.0:
-        1. Fiduciary Persona: Instructs the AI to act as a Senior Quantitative Analyst.
-        2. Forensic Constraint: Mandates alpha-validity verdicts and downside capture forensic checks.
-        3. Deterministic Output: Uses [TAG]-based formatting for premium UI rendering in the frontend.
+        if ratio > 1.5:
+            label = "Strong Asymmetry"
+        elif ratio >= 1.0:
+            label = "Moderate Asymmetry"
+        else:
+            label = "Linear / Beta-Driven"
+
+        return {"score": score, "ratio": ratio, "label": label}
+
+    def calculate_alpha_quality_score(
+        self,
+        info_ratio: float,
+        outperformance_pct: float,
+        rolling_alphas: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Composite Alpha Quality Score (0–10):
+        - Information Ratio     40%
+        - Outperformance Freq   40%
+        - Rolling Alpha Persist 20%
+        High ≥ 7, Medium 4–7, Low < 4.
+        """
+        # Normalise IR to 0–10 (cap at IR=2 → 10)
+        ir_norm = min(max(info_ratio, 0) / 2.0, 1.0) * 10
+        # Outperformance frequency is already 0–1 → scale to 0–10
+        op_norm = min(max(outperformance_pct, 0), 1.0) * 10
+        # Rolling alpha persistence: consistency of positive alpha
+        if rolling_alphas and len(rolling_alphas) >= 3:
+            persist = sum(1 for a in rolling_alphas if a > 0) / len(rolling_alphas)
+        else:
+            persist = 0.5  # neutral if insufficient data
+        persist_norm = persist * 10
+
+        score = round(0.40 * ir_norm + 0.40 * op_norm + 0.20 * persist_norm, 1)
+
+        if score >= 7.0:
+            label = "High Alpha Quality"
+        elif score >= 4.0:
+            label = "Medium Alpha Quality"
+        else:
+            label = "Low Alpha Quality"
+
+        return {"score": score, "label": label}
+
+    def calculate_drawdown_efficiency_ratio(self, cagr: float, max_drawdown: float) -> Dict[str, Any]:
+        """
+        DER = CAGR / |Max Drawdown|
+        Higher = more efficient capital deployment relative to drawdown risk.
+        """
+        mdd_abs = abs(max_drawdown) if max_drawdown != 0 else 1e-6
+        der = round(cagr / mdd_abs, 2)
+
+        if der >= 0.8:
+            label = "Efficient Capital Usage"
+        elif der >= 0.4:
+            label = "Moderate Efficiency"
+        else:
+            label = "Drawdown-Heavy Strategy"
+
+        return {"score": der, "label": label}
+
+    def calculate_consistency_index(
+        self,
+        outperformance_pct: float,
+        rolling_returns: pd.Series,
+    ) -> Dict[str, Any]:
+        """
+        Consistency Index (0–100):
+        Blend of outperformance frequency, rolling return variance, and dispersion.
+        Higher score = more repeatable, less episodic return pattern.
+        """
+        op_score = min(max(outperformance_pct, 0), 1.0) * 40  # max 40 pts
+        variance = float(rolling_returns.var()) if not rolling_returns.empty else 1.0
+        var_score = max(0, 40 - (variance * 200))  # penalise high variance, max 40 pts
+        dispersion = float(rolling_returns.std()) if not rolling_returns.empty else 1.0
+        disp_score = max(0, 20 - (dispersion * 100))  # max 20 pts
+
+        score = round(min(op_score + var_score + disp_score, 100), 1)
+
+        if score >= 70:
+            label = "Highly Consistent"
+        elif score >= 45:
+            label = "Above Average"
+        elif score >= 25:
+            label = "Moderate Consistency"
+        else:
+            label = "Episodic / Regime-Dependent"
+
+        return {"score": score, "label": label}
+
+    # ═══════════════════════════════════════════════════════════════════
+    # MARKET REGIME CLASSIFICATION ENGINE (v1.2.0)
+    # Uses Nifty 500 (^CRSLDX) as the sole market proxy — not fund benchmarks.
+    # ═══════════════════════════════════════════════════════════════════
+
+    def classify_market_regimes(
+        self,
+        market_nav: pd.Series,
+        fund_nav: pd.Series,
+        bench_nav: pd.Series,
+    ) -> Dict[str, Any]:
+        """
+        Classifies market regimes using rolling windows applied to the Nifty 500 index.
+        Performance within each regime is then evaluated using Fund vs Benchmark (not market).
+
+        Regime Definitions:
+          Bull    : Rolling return > 12% AND max drawdown > -10% AND vol_pct < 70th pct
+          Bear    : Peak-to-trough drawdown < -15% AND rolling return < 0%
+          Sideways: Everything else (return -5% to +10%, elevated volatility)
+        """
+        results: Dict[str, Any] = {"horizons": {}, "dominant": "Insufficient Data", "fund_vs_bench": []}
+
+        if market_nav.empty or len(market_nav) < 90:
+            return results
+
+        mkt_rets = market_nav.pct_change(fill_method=None).dropna()
+        if mkt_rets.empty:
+            return results
+
+        # Historical volatility series for percentile computation
+        hist_vol = mkt_rets.rolling(63).std() * np.sqrt(252)  # 3M rolling vol
+        full_vol_series = hist_vol.dropna()
+
+        horizons = {"3M": 63, "6M": 126, "12M": 252, "36M": 756}
+        horizon_results = {}
+
+        for label, window in horizons.items():
+            if len(market_nav) < window:
+                continue
+
+            mkt_window = market_nav.iloc[-window:]
+            fund_window = fund_nav.reindex(mkt_window.index, method="nearest").dropna()
+            bench_window = bench_nav.reindex(mkt_window.index, method="nearest").dropna()
+
+            if len(mkt_window) < 20:
+                continue
+
+            # --- Market Signals (Nifty 500 only) ---
+            mkt_return = float((mkt_window.iloc[-1] / mkt_window.iloc[0]) ** (252 / len(mkt_window)) - 1)
+            rolling_max_mkt = mkt_window.cummax()
+            mkt_drawdown = float(((mkt_window - rolling_max_mkt) / rolling_max_mkt).min())
+
+            # Realised vol of this window
+            win_vol = float(mkt_rets.reindex(mkt_window.index).std() * np.sqrt(252))
+            vol_pct = float((full_vol_series <= win_vol).mean() * 100) if not full_vol_series.empty else 50.0
+
+            # --- Regime Classification ---
+            if mkt_drawdown <= -0.15 and mkt_return < 0:
+                regime = "Bear"
+            elif mkt_return >= 0.12 and mkt_drawdown > -0.10 and vol_pct < 70:
+                regime = "Bull"
+            else:
+                regime = "Sideways"
+
+            # --- Confidence Score (3-signal voting) ---
+            votes = 0
+            if regime == "Bull":
+                if mkt_return >= 0.12:
+                    votes += 1
+                if mkt_drawdown > -0.10:
+                    votes += 1
+                if vol_pct < 70:
+                    votes += 1
+            elif regime == "Bear":
+                if mkt_drawdown <= -0.15:
+                    votes += 1
+                if mkt_return < 0:
+                    votes += 1
+                votes += 1  # Bear always at least 2/3 by definition
+            else:
+                votes = 2  # Sideways = moderate confidence by default
+
+            confidence_map = {3: "High", 2: "Medium", 1: "Low"}
+            confidence = confidence_map.get(votes, "Low")
+
+            # --- Fund Performance in this regime ---
+            fund_ret: Optional[float] = None
+            bench_ret: Optional[float] = None
+            excess: Optional[float] = None
+            behavior = "Insufficient Data"
+
+            if len(fund_window) >= 20 and len(bench_window) >= 20:
+                fund_ret = float((fund_window.iloc[-1] / fund_window.iloc[0]) ** (252 / len(fund_window)) - 1)
+                bench_ret = float((bench_window.iloc[-1] / bench_window.iloc[0]) ** (252 / len(bench_window)) - 1)
+                excess = round(fund_ret - bench_ret, 4)
+
+                if excess > 0.03:
+                    behavior = "Alpha-generative" if regime != "Bear" else "Defensive"
+                elif excess > 0:
+                    behavior = "Outperforming"
+                elif excess > -0.03:
+                    behavior = "Lagging"
+                else:
+                    behavior = "Significantly Lagging"
+
+            horizon_results[label] = {
+                "regime": regime,
+                "confidence": confidence,
+                "mkt_return": round(mkt_return, 4),
+                "mkt_drawdown": round(mkt_drawdown, 4),
+                "vol_percentile": round(vol_pct, 1),
+                "fund_return": round(fund_ret, 4) if fund_ret is not None else None,
+                "bench_return": round(bench_ret, 4) if bench_ret is not None else None,
+                "excess_return": excess,
+                "behavior": behavior,
+            }
+
+        results["horizons"] = horizon_results
+
+        # Dominant regime = 12M if available, else latest horizon
+        if "12M" in horizon_results:
+            results["dominant"] = horizon_results["12M"]["regime"]
+            results["dominant_confidence"] = horizon_results["12M"]["confidence"]
+        elif horizon_results:
+            last_key = list(horizon_results.keys())[-1]
+            results["dominant"] = horizon_results[last_key]["regime"]
+            results["dominant_confidence"] = horizon_results[last_key]["confidence"]
+
+        return results
+
+    def generate_ai_report_markdown(
+        self,
+        fund_name: str,
+        benchmark_name: str,
+        deep_metrics: List[dict],
+        rolling_profiles: dict,
+        stress_df: Optional[pd.DataFrame] = None,
+        proprietary_metrics: Optional[Dict[str, Any]] = None,
+        regime_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        AI SYNTHESIS ENGINE (v1.2.0 — CIO-Grade Investment Memo)
+        ----------------------------------------------------------
+        Upgraded to a 7-section institutional memo framework:
+          [INVESTMENT_VIEW] [DIAGNOSTICS] [PROPRIETARY_METRICS]
+          [REGIME_ANALYSIS] [PORTFOLIO_ROLE] [ALLOCATION_GUIDANCE]
+          [RISK_CONSIDERATIONS]
+
+        Key v1.2.0 improvements:
+        - Pre-computed proprietary metrics injected as hard numbers (AI interprets, not calculates)
+        - Market Regime data from Nifty 500 included for regime-aware synthesis
+        - Strict language governance: banned retail keywords, mandated institutional vocabulary
+        - CIO hedge-fund-memo persona with 7-section deterministic output format
         """
         if stress_df is None:
             stress_df = pd.DataFrame()
+        if proprietary_metrics is None:
+            proprietary_metrics = {}
+        if regime_data is None:
+            regime_data = {}
 
-        # Build report as a list of strings
         report = [
             "# ROLE",
-            "You are a Senior Quantitative Investment Analyst specializing in portfolio construction, risk diagnostics, and fiduciary evaluation. "
-            "You produce investment-committee–grade analysis grounded strictly in provided data.",
+            "You are a CIO-level investment analyst generating a hedge-fund-style institutional fund evaluation. "
+            "You write like a senior portfolio manager presenting to an investment committee. "
+            "Every statement must be defensible by the provided quantitative data.",
+            "\n# LANGUAGE GOVERNANCE — MANDATORY",
+            "BANNED WORDS (never use): strong, good, effective, great, excellent, impressive, robust, SIP, " "stop-loss, buy, sell, invest",
+            "PREFERRED VOCABULARY: structural, persistent, asymmetric, repeatable, drawdown-sensitive, " "regime-dependent, alpha-generating, defensive, episodic, conviction",
             "\n# OBJECTIVE",
-            f"Deliver a high-conviction, data-driven evaluation of the mutual fund **{fund_name}** relative to its benchmark **{benchmark_name}**, with emphasis on:",
-            "- Downside protection",
-            "- Return consistency",
-            "- Risk-adjusted alpha validity",
+            f"Generate a structured institutional investment memo for **{fund_name}** " f"benchmarked against **{benchmark_name}**.",
             "\n# INPUT DATA",
-            "## 🏆 Performance Grid (1Y, 3Y, 5Y Horizons)",
-            "| Period | Sharpe | Sortino | Info Ratio | Alpha | Beta | Batting Avg | Up/Down Efficiency | Upside | Downside |",
-            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+            "## Performance Grid (1Y, 3Y, 5Y Horizons)",
+            "| Period | Sharpe | Sortino | Info Ratio | Alpha | Beta | Batting Avg | Upside | Downside |",
+            "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
         ]
 
-        # 1. Performance Data
         for m in deep_metrics:
             report.append(
-                f"| {m.get('Period', 'N/A')} | {m.get('Sharpe', 0):.2f} | {m.get('Sortino', 0):.2f} | {m.get('Info Ratio', 0):.2f} | "
-                f"{m.get('Jensen Alpha', 0):.1%} | {m.get('Beta', 0):.2f} | {m.get('Batting Avg', 0):.0%} | "
-                f"{m.get('Upside / Downside', 0):.2f} | {m.get('Upside Capture', 0):.0%} | {m.get('Downside Capture', 0):.0%} |"
+                f"| {m.get('Period', 'N/A')} | {m.get('Sharpe', 0):.2f} | "
+                f"{m.get('Sortino', 0):.2f} | {m.get('Info Ratio', 0):.2f} | "
+                f"{m.get('Jensen Alpha', 0):.1%} | {m.get('Beta', 0):.2f} | "
+                f"{m.get('Batting Avg', 0):.0%} | "
+                f"{m.get('Upside Capture', 0):.0%} | {m.get('Downside Capture', 0):.0%} |"
             )
 
-        # 2. Rolling Data
         report.extend(
             [
-                "\n## 🧬 Performance Consistency (Rolling Profiles)",
+                "\n## Rolling Return Profiles",
                 "| Window | Median | Max | Min | Outperformance % |",
                 "| :--- | :--- | :--- | :--- | :--- |",
             ]
         )
         for label, stats in rolling_profiles.items():
             if isinstance(stats, dict):
-                report.append(f"| {label} | {stats.get('Median Return', 0):.1%} | {stats.get('Maximum Return', 0):.1%} | {stats.get('Minimum Return', 0):.1%} | {stats.get('Outperformance', 0):.0%} |")
+                report.append(
+                    f"| {label} | {stats.get('Median Return', 0):.1%} | "
+                    f"{stats.get('Maximum Return', 0):.1%} | "
+                    f"{stats.get('Minimum Return', 0):.1%} | "
+                    f"{stats.get('Outperformance', 0):.0%} |"
+                )
 
-        # 3. Stress Data
         report.extend(
             [
-                "\n## 🛡️ Historical Resilience (Market Stress Scenarios)",
-                "| Crisis Event | Fund Performance | Benchmark | Capture Ratio |",
+                "\n## Historical Stress Scenarios",
+                "| Crisis | Fund | Benchmark | Capture |",
                 "| :--- | :--- | :--- | :--- |",
             ]
         )
@@ -544,52 +802,66 @@ class MFAnalytics:
             for _, row in stress_df.iterrows():
                 cap_val = row.get("Capture Ratio", "-")
                 cap_str = f"{cap_val:.2f}" if isinstance(cap_val, (int, float)) else "-"
-                report.append(f"| {row['Crisis']} | {row['Fund Drop']:.1%} | {row['Benchmark Drop']:.1%} | {cap_str} |")
+                report.append(f"| {row['Crisis']} | {row['Fund Drop']:.1%} | " f"{row['Benchmark Drop']:.1%} | {cap_str} |")
         else:
-            report.append("| No history for major crises | - | - | - |")
+            report.append("| No crisis history available | - | - | - |")
 
-        # 4. Framework & Rules
+        # Proprietary Metrics Block (pre-computed — AI interprets, not calculates)
+        if proprietary_metrics:
+            cs = proprietary_metrics.get("convexity_score", {})
+            aq = proprietary_metrics.get("alpha_quality", {})
+            dr = proprietary_metrics.get("der", {})
+            ci = proprietary_metrics.get("consistency_index", {})
+            report.extend(
+                [
+                    "\n## Proprietary Metrics (Pre-Computed — Do NOT Recalculate)",
+                    f"- Convexity Score: {cs.get('ratio', 'N/A')} ({cs.get('label', 'N/A')})",
+                    f"- Alpha Quality Score: {aq.get('score', 'N/A')}/10 ({aq.get('label', 'N/A')})",
+                    f"- Drawdown Efficiency Ratio (DER): {dr.get('score', 'N/A')} " f"({dr.get('label', 'N/A')})",
+                    f"- Consistency Index: {ci.get('score', 'N/A')}/100 ({ci.get('label', 'N/A')})",
+                ]
+            )
+
+        # Regime Block
+        if regime_data and regime_data.get("horizons"):
+            dom = regime_data.get("dominant", "N/A")
+            dom_conf = regime_data.get("dominant_confidence", "N/A")
+            report.extend(
+                [
+                    f"\n## Market Regime Data (Nifty 500 — Dominant 12M Regime: {dom} [{dom_conf} Confidence])",
+                    "| Horizon | Regime | Confidence | Fund Return | Benchmark | Excess | Behavior |",
+                    "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
+                ]
+            )
+            for hz, hd in regime_data["horizons"].items():
+                fr = f"{hd['fund_return']:.1%}" if hd.get("fund_return") is not None else "N/A"
+                br = f"{hd['bench_return']:.1%}" if hd.get("bench_return") is not None else "N/A"
+                ex = f"{hd['excess_return']:.1%}" if hd.get("excess_return") is not None else "N/A"
+                report.append(f"| {hz} | {hd['regime']} | {hd['confidence']} | {fr} | {br} | {ex} | " f"{hd['behavior']} |")
+
         report.extend(
             [
-                "\n# ANALYTICAL FRAMEWORK",
-                "## 1. Downside Protection & Capital Preservation",
-                "- Evaluate drawdowns (depth, duration, recovery time)",
-                "- Assess downside capture vs benchmark (primary signal)",
-                "- Compare asymmetry: upside vs downside capture",
-                "- Explicitly identify whether alpha is generated defensively or cyclically",
-                "\n## 2. Return Consistency & Reliability",
-                "- Analyze rolling 3Y and 5Y distributions (median vs dispersion)",
-                "- Estimate consistency via:",
-                "  - Frequency of outperformance vs benchmark",
-                "  - Stability of excess returns across periods",
-                "- Identify regime dependency (does performance cluster in specific environments?)",
-                "\n## 3. Risk-Adjusted Efficiency",
-                "- Interpret Sharpe, Sortino, and Information ratios jointly (not in isolation)",
-                "- Determine if excess returns are:",
-                "  - Persistent and skill-based",
-                "  - Or volatility-driven / unstable",
-                "- Penalize high volatility or weak downside control even if returns are high",
-                "\n# CRITICAL RULES",
-                "- Use ONLY the provided data (no assumptions, no external knowledge)",
-                "- Quantify wherever possible (e.g., “outperformed in ~65% of rolling periods”)",
-                "- If data is insufficient for a conclusion, explicitly state the limitation",
-                "- Prioritize downside risk over absolute return",
-                "- Avoid generic statements; every claim must tie to a metric",
-                "\n# OUTPUT FORMAT",
-                "You must return the analysis using the specific TAGS below. Do NOT use markdown headers (# or ##) or bold titles in your response. The app will handle the styling.",
-                "\n[SUMMARY]",
-                "Provide the 2-sentence high-level verdict here.",
-                "\n[BREAKDOWN]",
-                "Provide the forensic breakdown. Every bullet MUST start with a **Bold Headline Summary:** followed by clear details.",
-                "\n[ACTIONABLES]",
-                "Provide EXACTLY 3 high-impact recommendations. Every bullet MUST start with a **Bold Action Title:** followed by the rationale.",
-                "\n# SUCCESS CRITERIA",
-                "- High signal density | No hashtags | No bold headers",
-                "- **Scanability:** Every bullet point MUST begin with a **2-3 word bold summary header**.",
-                "- **Scanability:** BOLD all key metrics, percentages, and conclusive verdicts (e.g., **Strong Alpha** or **17.9% Median**).",
-                "- **Crucial:** Use ONLY the [TAGS] as section separators.",
+                "\n# OUTPUT FORMAT — MANDATORY",
+                "Return the analysis ONLY using the 7 TAGS below in this exact order.",
+                "Do NOT use markdown headers (#, ##). Do NOT use the banned words listed above.",
+                "The app renders each tag as a separate UI section.",
+                "\n[INVESTMENT_VIEW]",
+                "2–3 sentences. State: (1) what the fund is structurally, " "(2) its primary role in a portfolio, (3) its structural edge or deficit.",
+                "\n[DIAGNOSTICS]",
+                "4 sub-sections. Each bullet starts with **Bold Sub-Header:**",
+                "Sub-sections: **Downside Participation & Asymmetry:** | " "**Return Consistency:** | **Risk-Adjusted Efficiency:** | **Alpha Quality:**",
+                "\n[PROPRIETARY_METRICS]",
+                "One interpretation sentence per metric. Reference the pre-computed values above. " "Do NOT recalculate. Format: **Metric Name (Value):** interpretation.",
+                "\n[REGIME_ANALYSIS]",
+                "Describe fund behaviour across regime windows from the data above. " "Identify where the fund outperforms or underperforms structurally.",
+                "\n[PORTFOLIO_ROLE]",
+                "State Core / Satellite / Hedge and explain fit. " "What does it complement? What does it not replace?",
+                "\n[ALLOCATION_GUIDANCE]",
+                "Qualitative portfolio weight context only. No specific percentages. " "Reference portfolio construction principles (diversification, risk budget, regime fit).",
+                "\n[RISK_CONSIDERATIONS]",
+                "3 bullets minimum. Cover: (1) when the strategy structurally fails, " "(2) style/factor biases, (3) regime or concentration risk.",
                 "\n---",
-                "**Analyst Task:** Decipher the data and generate the memo (Scanable Bolding required).",
+                "Write with precision. Every claim must reference a metric from the data above.",
             ]
         )
 
