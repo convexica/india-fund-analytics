@@ -122,12 +122,12 @@ st.markdown(
 
 @st.cache_resource(show_spinner="Initializing Analytics Engine...")
 def get_analytics_toolkit() -> Tuple[MFDataFetcher, MFAnalytics]:
-    """Force-initialize the analytical suite - Cache-breaker v2.2.0."""
+    """Force-initialize the analytical suite - Cache-breaker v2.3.1."""
     return MFDataFetcher(), MFAnalytics()
 
 
 fetcher, analytics = get_analytics_toolkit()
-Riverside_Cache_Breaker = "2.3.0"
+Riverside_Cache_Breaker = "2.3.1"
 
 # Sidebar - Search and Selection
 with st.sidebar:
@@ -532,25 +532,23 @@ if selected_code:
             style_consistency_help = "Analysis of the fund's behavioral style, consistency, and active management character."
 
             # Construct simple flat headers for high-density terminal look
-            col_list = ["Period", "Sharpe", "Sortino", "Calmar", "Info Ratio", "Omega", "Beta", "Jensen Alpha", "Batting Avg", "Upside / Downside", "Upside Capture", "Downside Capture"]
+            col_list = ["Period", "Sharpe", "Sortino", "Info Ratio", "Omega", "Beta", "Jensen Alpha", "Batting Avg", "Upside Capture", "Downside Capture"]
 
             # Re-index full dataframe with flat columns
             df_display = df_full[col_list].copy()
 
-            # Column Config: Map to actual column names for type safety
+            # Column Config: Map to actual column names for type safety (Equal Width Balance)
             col_config = {
-                "Period": st.column_config.TextColumn("Period", width=80, pinned=True),
-                "Sharpe": st.column_config.TextColumn("Sharpe", help="Excess return per unit of total risk. Higher is better.", width=75),
-                "Sortino": st.column_config.TextColumn("Sortino", help="Penalizes downside volatility. Ideal for skewed return profiles.", width=75),
-                "Calmar": st.column_config.TextColumn("Calmar", help="CAGR / Max Drawdown. Measures return vs 'crash' risk.", width=75),
-                "Info Ratio": st.column_config.TextColumn("Info Ratio", help="Active return vs benchmark per tracking error.", width=105),
-                "Omega": st.column_config.TextColumn("Omega", help="Gains vs losses weighted by probability.", width=75),
-                "Beta": st.column_config.TextColumn("Beta", help="Market Sensitivity. 1.0 = moves with index. >1.0 Aggressive, <1.0 Defensive.", width=75),
-                "Jensen Alpha": st.column_config.TextColumn("Jensen Alpha", help="Annualized excess return above market expectation.", width=105),
-                "Batting Avg": st.column_config.TextColumn("Batting Avg", help="Frequency the fund beat the benchmark.", width=100),
-                "Upside / Downside": st.column_config.TextColumn("Up/Down Efficiency", help="Efficiency Ratio: Upside capture divided by Downside capture. Higher is better.", width=130),
-                "Upside Capture": st.column_config.TextColumn("Upside Capture", help="Gain capture during positive months.", width=125),
-                "Downside Capture": st.column_config.TextColumn("Downside Capture", help="Loss capture during negative months.", width=140),
+                "Period": st.column_config.TextColumn("Period", pinned=True),
+                "Sharpe": st.column_config.TextColumn("Sharpe", help="Excess return per unit of total risk. Higher is better."),
+                "Sortino": st.column_config.TextColumn("Sortino", help="Penalizes downside volatility. Ideal for skewed return profiles."),
+                "Info Ratio": st.column_config.TextColumn("Info Ratio", help="Active return vs benchmark per tracking error."),
+                "Omega": st.column_config.TextColumn("Omega", help="Gains vs losses weighted by probability."),
+                "Beta": st.column_config.TextColumn("Beta", help="Market Sensitivity. 1.0 = moves with index. >1.0 Aggressive, <1.0 Defensive."),
+                "Jensen Alpha": st.column_config.TextColumn("Jensen Alpha", help="Annualized excess return above market expectation."),
+                "Batting Avg": st.column_config.TextColumn("Batting Avg", help="Frequency the fund beat the benchmark."),
+                "Upside Capture": st.column_config.TextColumn("Upside Capture", help="Gain capture during positive months."),
+                "Downside Capture": st.column_config.TextColumn("Downside Capture", help="Loss capture during negative months."),
             }
 
             # Archive for AI Synthesis vault: High-fidelity forensic metrics
@@ -562,13 +560,11 @@ if selected_code:
                     "Period": "{}",
                     "Sharpe": "{:.2f}",
                     "Sortino": "{:.2f}",
-                    "Calmar": "{:.2f}",
                     "Info Ratio": "{:.2f}",
                     "Omega": "{:.2f}",
                     "Beta": "{:.2f}",
                     "Jensen Alpha": "{:.1%}",
                     "Batting Avg": "{:.0%}",
-                    "Upside / Downside": "{:.2f}",
                     "Upside Capture": "{:.0%}",
                     "Downside Capture": "{:.0%}",
                 }
@@ -783,32 +779,118 @@ if selected_code:
             outperf_pct = list(fund_profile.values())[0].get("Outperformance", 0.5) if fund_profile else 0.5
 
             proprietary_metrics = {
-                "convexity_score": analytics.calculate_convexity_score(upside_cap, downside_cap, rolling_3y),
+                "convexity_score": analytics.calculate_convexity_score(deep_metrics),
                 "alpha_quality": analytics.calculate_alpha_quality_score(info_ratio, outperf_pct),
-                "der": analytics.calculate_drawdown_efficiency_ratio(cagr_val, max_dd),
+                "der": analytics.calculate_drawdown_efficiency_ratio(cagr_val, primary.get("MaxDrawdown", max_dd)),
                 "consistency_index": analytics.calculate_consistency_index(outperf_pct, rolling_3y),
             }
 
         # ═══════════════════════════════════════════════════════════════
-        # PROPRIETARY METRICS DISPLAY (v1.2.0)
+        # PROPRIETARY METRICS DISPLAY (v1.2.2)
         # ═══════════════════════════════════════════════════════════════
         if proprietary_metrics:
+            # Custom Tooltip CSS for better visibility
+            st.markdown(
+                """
+            <style>
+            .pm-tile {
+                position: relative;
+                display: inline-block;
+                background:#1e293b;
+                border:1px solid rgba(212,175,55,0.3);
+                border-radius:10px;
+                padding:14px 16px;
+                height:130px;
+                width: 100%;
+                cursor: help;
+                transition: transform 0.2s;
+            }
+            .pm-tile:hover { transform: translateY(-2px); border-color: #d4af37; }
+            .pm-tile .tooltiptext {
+                visibility: hidden;
+                width: 220px;
+                background-color: rgba(15, 23, 42, 0.95);
+                color: #e2e8f0;
+                text-align: left;
+                border: 1px solid #d4af37;
+                border-radius: 6px;
+                padding: 10px;
+                position: absolute;
+                z-index: 100;
+                bottom: 110%; /* Position above the box */
+                left: 50%;
+                margin-left: -110px;
+                opacity: 0;
+                transition: opacity 0.3s;
+                font-size: 0.75rem;
+                line-height: 1.4;
+                box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            }
+            .pm-tile:hover .tooltiptext { visibility: visible; opacity: 1; }
+            </style>
+            """,
+                unsafe_allow_html=True,
+            )
+
             st.markdown("### 🔢 Proprietary Metrics")
+
+            # --- Education Layer: Deep-Dive Methodology ---
+            with st.expander("📚 Methodology & Interpretation Guide", expanded=False):
+                st.markdown(
+                    """
+                <div style='font-size:0.85rem; color:#e2e8f0;'>
+                <p><b>Convexity Score:</b> Inclusive model blending capture efficiency across 1Y, 3Y, and 5Y horizons.
+                Rewards <i>persistence</i> (structural outperformance across regimes) over episodic results. Target: >1.2.</p>
+                <p><b>Alpha Quality:</b> Composite score (0–10) using daily NAV data.
+                Weighted: 40% Information Ratio, 40% Outperformance Frequency, 20% Rolling Alpha Persistence. Target: >7.</p>
+                <p><b>Consistency Index:</b> Measures return repeatability (0–100%).
+                Calculated as a blend of 3Y Benchmark Outperformance Frequency (40%) and a rolling variance/stability penalty (60%). Target: >75%.</p>
+                <p><b>Drawdown Efficiency:</b> Measures risk-efficiency for the selected forensic window (e.g. 3Y).
+                Formula: <code>CAGR / |Maximum Drawdown|</code> for the analysis period. Target: >0.5x.</p>
+                </div>
+                """,
+                    unsafe_allow_html=True,
+                )
+
             pm_cols = st.columns(4)
             pm_defs = [
-                ("Convexity Score", "convexity_score", "ratio", "label", "Upside/Downside capture asymmetry × stability"),
-                ("Alpha Quality", "alpha_quality", "score", "label", "Composite of IR, outperformance frequency & persistence (0–10)"),
-                ("Drawdown Efficiency", "der", "score", "label", "CAGR / Max Drawdown — capital efficiency under stress"),
-                ("Consistency Index", "consistency_index", "score", "label", "Repeatability of outperformance (0–100)"),
+                (
+                    "Convexity Score",
+                    "convexity_score",
+                    "score",
+                    "label",
+                    "<b>Convexity</b> uses 3Y Capture Ratios × 10% Vol-Normalized Stability.<br><br>Measures return asymmetry—capturing gains while cushioning falls (Target >1.2).",
+                ),
+                (
+                    "Alpha Quality",
+                    "alpha_quality",
+                    "score",
+                    "label",
+                    "<b>Alpha Quality</b> uses 3Y daily NAV.<br><br> Gauges if outperformance is skilled (consistent) or episodic (luck).",
+                ),
+                (
+                    "Consistency Index",
+                    "consistency_index",
+                    "score",
+                    "label",
+                    "<b>Consistency</b> measures profile stability.<br><br>Blend of 3Y Benchmark performance (40%) and a rolling variance penalty (60%) for total repeatability.",
+                ),
+                (
+                    "Drawdown Efficiency",
+                    "der",
+                    "score",
+                    "label",
+                    "<b>Drawdown Efficiency</b> uses the selected horizon (e.g. 3Y).<br><br>Measures return per unit of max risk during the analysis period (Target >0.5x).",
+                ),
             ]
-            for col, (title, key, val_field, label_field, _tip) in zip(pm_cols, pm_defs, strict=False):
+            for pm_col, (title, key, val_field, label_field, _tip) in zip(pm_cols, pm_defs, strict=False):
                 pm = proprietary_metrics.get(key, {})
                 val = pm.get(val_field, "—")
                 lbl = pm.get(label_field, "")
-                suffix = "/10" if "Alpha" in title else "/100" if "Consistency" in title else ""
-                col.markdown(
-                    f"<div style='background:#1e293b;border:1px solid rgba(212,175,55,0.3);"
-                    f"border-radius:10px;padding:14px 16px;height:120px;'>"
+                suffix = "/10" if "Alpha" in title else "%" if "Consistency" in title else ""
+                pm_col.markdown(
+                    f"<div class='pm-tile'>"
+                    f"<span class='tooltiptext'>{_tip}</span>"
                     f"<p style='color:#94a3b8;font-size:0.75rem;margin:0 0 4px;'>{title}</p>"
                     f"<p style='color:#d4af37;font-size:1.6rem;font-weight:700;margin:0;'>"
                     f"{val}{suffix}</p>"
@@ -820,8 +902,8 @@ if selected_code:
         # ═══════════════════════════════════════════════════════════════
         # AI INSIGHT INTEGRATION (v1.2.0)
         # ═══════════════════════════════════════════════════════════════
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info("Generate a CIO-grade institutional investment memo powered by the AI Synthesis Engine.")
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.info("Generate a CIO-grade investment memo powered by the AI Synthesis Engine.")
 
         c_btn1, _, _, _ = st.columns(4)
         with c_btn1:
@@ -948,9 +1030,123 @@ if selected_code:
 else:
     st.info("👈 Enter a fund name (e.g., 'HDFC Flexi' or 'SBI Bluechip') to begin deep analysis.")
 
-# --- Institutional Fiduciary Disclosure & Disclaimer (Footer) ---
+# ═══════════════════════════════════════════════════════════════
+# 🤖 CONVEX AI | INVESTMENT STRATEGIST (PREMIUM UI/UX)
+# ═══════════════════════════════════════════════════════════════
+st.markdown("<br><br>", unsafe_allow_html=True)
+
+# Styled Header: Alpha Gold & Inter Typography
+st.markdown(
+    """
+    <style>
+        /* Precision alignment for chat bubble text */
+        .stChatMessage [data-testid="stMarkdownContainer"] p {
+            margin-top: 0 !important;
+            padding-top: 2px !important;
+        }
+    </style>
+    <div style='border-bottom: 2px solid rgba(212, 175, 55, 0.3); padding-bottom: 10px; margin-bottom: 20px;'>
+        <h3 style='color:#d4af37; margin:0; font-family: "Inter", sans-serif; font-weight: 700;'>
+            🤖 ConvexAI <span style='color:#e2e8f0; font-weight: 300;'>| Investment Strategist</span>
+        </h3>
+        <p style='color:#94a3b8; font-size:0.85rem; margin-top:4px;'>
+            Advanced analytical strategist providing deep quantitative forensics on mutual fund portfolios.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "last_query" not in st.session_state:
+    st.session_state.last_query = ""
+
+# --- 1. Strategist Command Center (Primary Entry) ---
+with st.container(border=False):
+    # Command Bar (Open layout for reduced visual clutter)
+    c_in1, c_in2 = st.columns([5, 1.2])
+    with c_in1:
+        user_input = st.text_input(label="Ask ConvexAI", placeholder="Ask ConvexAI about mutual funds...", label_visibility="collapsed", key="convex_query_field")
+    with c_in2:
+        is_submitted = st.button("Ask ConvexAI", key="submit_query_btn", type="primary", use_container_width=True)
+
+    if (user_input and is_submitted) or (user_input and st.session_state.last_query != user_input):
+        # Update last query to catch 'Enter' key submission while preventing loops
+        st.session_state.last_query = user_input
+
+        # Context gathering
+        context = None
+        if "analytical_vault" in st.session_state and st.session_state["analytical_vault"].get("name"):
+            vault = st.session_state["analytical_vault"]
+            context = f"Current Fund: {vault['name']}\nBenchmark: {vault['benchmark']}\nKey Stats: {vault['returns']}\n"
+            if "deep_metrics_vault" in st.session_state:
+                context += f"Detailed Ratios: {st.session_state['deep_metrics_vault']}"
+
+        st.session_state.messages.append({"role": "user", "content": user_input})
+
+        with st.spinner("ConvexAI is synthesizing..."):
+            ai_response = analytics.generate_chat_response(messages=st.session_state.messages, context_brief=context)
+            st.session_state.messages.append({"role": "assistant", "content": ai_response})
+            st.rerun()
+
+# --- 2. Strategic Insight Starters (Contextual Suggestions) ---
+if not st.session_state.messages:
+    st.markdown("<p style='font-size:0.85rem; font-weight:600; color:#e2e8f0; margin-bottom:10px;'>💡 Strategic Insight Starters</p>", unsafe_allow_html=True)
+    chip_col1, chip_col2, chip_col3, chip_col4 = st.columns(4)
+    queries = [
+        "Explain the Alpha validity of this fund.",
+        "How is the downside character compared to the benchmark?",
+        "What are the tax implications if I sell after 2 years?",
+        "Summarize the risk-adjusted efficiency (Sortino/Sharpe).",
+    ]
+    starter_query = None
+    if chip_col1.button("🔍 Alpha Validity", key="chip_1", use_container_width=True):
+        starter_query = queries[0]
+    if chip_col2.button("🛡️ Downside Check", key="chip_2", use_container_width=True):
+        starter_query = queries[1]
+    if chip_col3.button("💰 Taxation Nuances", key="chip_3", use_container_width=True):
+        starter_query = queries[2]
+    if chip_col4.button("📊 Risk/Return Ratio", key="chip_4", use_container_width=True):
+        starter_query = queries[3]
+
+    if starter_query:
+        st.session_state.messages.append({"role": "user", "content": starter_query})
+
+        context = None
+        if "analytical_vault" in st.session_state and st.session_state["analytical_vault"].get("name"):
+            vault = st.session_state["analytical_vault"]
+            context = f"Current Fund: {vault['name']}\nBenchmark: {vault['benchmark']}\nKey Stats: {vault['returns']}\n"
+            if "deep_metrics_vault" in st.session_state:
+                context += f"Detailed Ratios: {st.session_state['deep_metrics_vault']}"
+
+        with st.spinner("ConvexAI is synthesizing..."):
+            ai_response = analytics.generate_chat_response(messages=st.session_state.messages, context_brief=context)
+            st.session_state.messages.append({"role": "assistant", "content": ai_response})
+            st.rerun()
+
+# --- 3. Interactive Hub (Chronological History) ---
+if st.session_state.messages:
+    # Diagnostic Log: Optimized vertical alignment and avatar anchoring
+    with st.container(border=False, height=500):
+        for message in st.session_state.messages:
+            avatar_icon = "🤖" if message["role"] == "assistant" else "👤"
+            with st.chat_message(message["role"], avatar=avatar_icon):
+                st.markdown(message["content"])
+
+# --- 3. Utilities & Data Protection ---
+if st.session_state.messages:
+    sub_c1, _ = st.columns([1.5, 3])
+    if sub_c1.button("🗑️ Reset Strategist Session", key="reset_strat", type="secondary", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.last_query = ""
+        st.rerun()
+
+# --- 4. Unified Fiduciary & Privacy Disclosure (Footer) ---
 st.divider()
 st.caption(
+    "🔒 **Data Privacy:** Do not enter confidential client data. AI responses are for informational purposes only.\n\n"
     "⚠️ **Disclaimer & Fiduciary Notice:** All analytics, quantitative metrics, and AI-generated synthesis provided by **ConvexLab** are exclusively for **educational and informational purposes**. "
     "These outputs represent historical data approximations and statistical modeling based on third-party public information. "
     "**Important:** This application **does not constitute investment advice**, financial planning, or a professional recommendation to buy, sell, or hold any security. "

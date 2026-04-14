@@ -1,6 +1,6 @@
 [project]
 name = "convexlab"
-version = "1.2.0"
+version = "1.4.0"
 description = "Institutional-Grade Mutual Fund Analytics, Regime Classification & AI Synthesis Engine"
 authors = [
     {name = "Convexica", email = "app@convexica.com"}

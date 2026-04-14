@@ -3,7 +3,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import streamlit as st
-from core.logger import get_logger
+
+from .logger import get_logger
 
 # Initialize professional logger
 logger = get_logger(__name__)
@@ -158,6 +159,7 @@ class MFAnalytics:
             "omega_ratio": omega,
             "hurst_exponent": hurst,
             "cagr": cagr,
+            "max_drawdown": max_dd,
         }
 
     def calculate_hurst(self, nav_series: pd.Series) -> float:
@@ -483,30 +485,72 @@ class MFAnalytics:
     # PROPRIETARY METRICS ENGINE (v1.2.0)
     # ═══════════════════════════════════════════════════════════════════
 
-    def calculate_convexity_score(self, upside_capture: float, downside_capture: float, rolling_returns: pd.Series) -> Dict[str, Any]:
+    def calculate_convexity_score(self, capture_metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Convexity Score = (Upside Capture / Downside Capture) × Stability Factor
-        Stability Factor = 1 / (Return Dispersion + epsilon)
-        Measures asymmetric return behaviour: >1.5 Strong, 1.0–1.5 Moderate, <1.0 Linear.
+        Convexity Score (Inclusive Multi-Horizon Model):
+        Blends capture efficiency across all available forensic windows (1Y, 3Y, 5Y).
+        Weighted 50% (3Y), 25% (1Y), 25% (5Y). Rewards structural persistence.
+        Target: >1.2 for Highly Convex Asymmetry.
         """
-        eps = 1e-6
-        dispersion = float(rolling_returns.std()) if not rolling_returns.empty else eps
-        stability_factor = 1.0 / (dispersion + eps)
-        dc = downside_capture if downside_capture != 0 else eps
-        raw_score = (upside_capture / dc) * stability_factor
+        if not capture_metrics:
+            return {"score": 0.0, "ratio": 0.0, "label": "Insufficient History"}
 
-        # Normalise to a 0–10 readable scale for display
-        score = round(min(raw_score * 10, 10.0), 2)
-        ratio = round(upside_capture / dc, 2)
+        # Anchor horizons: 1Y, 3Y, 5Y (Fuzzy Matching for robustness)
+        weights = {"1": 0.25, "3": 0.50, "5": 0.25}
+        composite_ratio = 0.0
+        total_weight = 0.0
+        persistence_count = 0
+        avail_horizons = 0
 
-        if ratio > 1.5:
-            label = "Strong Asymmetry"
-        elif ratio >= 1.0:
-            label = "Moderate Asymmetry"
+        for m in capture_metrics:
+            p_label = str(m.get("Period", ""))
+            upside = m.get("Upside Capture", 0) / 100
+            downside = m.get("Downside Capture", 100) / 100
+            if downside == 0:
+                downside = 0.01  # Floor
+            ratio = upside / downside
+
+            # Fuzzy match for '1', '3', or '5' in labels like '1 Yr', '3 Year', etc.
+            match_w = 0.0
+            if "1" in p_label:
+                match_w = weights["1"]
+            elif "3" in p_label:
+                match_w = weights["3"]
+            elif "5" in p_label:
+                match_w = weights["5"]
+
+            if match_w > 0:
+                composite_ratio += ratio * match_w
+                total_weight += match_w
+                avail_horizons += 1
+                if ratio > 1.0:
+                    persistence_count += 1
+
+        # Normalize across available weights
+        if total_weight > 0:
+            composite_ratio = composite_ratio / total_weight
         else:
-            label = "Linear / Beta-Driven"
+            # Absolute fallback: average of every period provided
+            ratios = [(m.get("Upside Capture", 0) / (m.get("Downside Capture", 100) or 1)) for m in capture_metrics]
+            composite_ratio = sum(ratios) / len(ratios) if ratios else 0.0
 
-        return {"score": score, "ratio": ratio, "label": label}
+        # --- Convexity Persistence Bonus ---
+        # Reward structural consistency: If the fund is convex in ALL available horizons,
+        # it demonstrates regime-resilience.
+        persistence_bonus = 0.0
+        if avail_horizons > 1 and persistence_count == avail_horizons:
+            persistence_bonus = 0.1  # Reward for structural consistency
+
+        score = round(composite_ratio + persistence_bonus, 2)
+
+        if score > 1.2:
+            label = "Structural Asymmetry"
+        elif score >= 0.95:
+            label = "Persistent Convexity" if persistence_count >= 2 else "Moderate Asymmetry"
+        else:
+            label = "Linear / Episodic Profile"
+
+        return {"score": score, "ratio": round(composite_ratio, 2), "label": label}
 
     def calculate_alpha_quality_score(
         self,
@@ -752,14 +796,14 @@ class MFAnalytics:
 
         report = [
             "# ROLE",
-            "You are a CIO-level investment analyst generating a hedge-fund-style institutional fund evaluation. "
+            "You are a CIO-level investment analyst generating a hedge-fund-style fund evaluation. "
             "You write like a senior portfolio manager presenting to an investment committee. "
             "Every statement must be defensible by the provided quantitative data.",
             "\n# LANGUAGE GOVERNANCE — MANDATORY",
             "BANNED WORDS (never use): strong, good, effective, great, excellent, impressive, robust, SIP, " "stop-loss, buy, sell, invest",
             "PREFERRED VOCABULARY: structural, persistent, asymmetric, repeatable, drawdown-sensitive, " "regime-dependent, alpha-generating, defensive, episodic, conviction",
             "\n# OBJECTIVE",
-            f"Generate a structured institutional investment memo for **{fund_name}** " f"benchmarked against **{benchmark_name}**.",
+            f"Generate a structured investment memo for **{fund_name}** " f"benchmarked against **{benchmark_name}**.",
             "\n# INPUT DATA",
             "## Performance Grid (1Y, 3Y, 5Y Horizons)",
             "| Period | Sharpe | Sortino | Info Ratio | Alpha | Beta | Batting Avg | Upside | Downside |",
@@ -801,7 +845,7 @@ class MFAnalytics:
         if not stress_df.empty:
             for _, row in stress_df.iterrows():
                 cap_val = row.get("Capture Ratio", "-")
-                cap_str = f"{cap_val:.2f}" if isinstance(cap_val, (int, float)) else "-"
+                cap_str = f"{cap_val:.0%}" if isinstance(cap_val, (int, float)) else "-"
                 report.append(f"| {row['Crisis']} | {row['Fund Drop']:.1%} | " f"{row['Benchmark Drop']:.1%} | {cap_str} |")
         else:
             report.append("| No crisis history available | - | - | - |")
@@ -918,3 +962,131 @@ class MFAnalytics:
             '3. Add your key: `GROQ_API_KEY = "your_key"`.\n\n'
             "**Analyst Briefing:** (Copy the code block below to your preferred assistant)"
         )
+
+    def generate_chat_response(self, messages: List[Dict[str, str]], context_brief: Optional[str] = None) -> str:
+        """
+        Conversational engine for ConvexAI.
+        Processes chat history and optional quant context to provide senior-analyst level responses.
+        """
+        import streamlit as st
+
+        # 🛸 SYSTEM PROMPT — The Soul of ConvexAI
+        system_prompt = (
+            "# ROLE\n"
+            "You are **ConvexAI**, a state-of-the-art investment strategist and quantitative analyst at Convexica. "
+            "You deliver institutional-grade analysis of Indian mutual funds for sophisticated investors and fiduciaries.\n\n"
+            "# OBJECTIVE\n"
+            "Provide high-conviction, data-driven insights that help users evaluate mutual funds through:\n"
+            "- Risk-adjusted performance\n"
+            "- Downside behavior\n"
+            "- Structural consistency\n"
+            "- Portfolio role suitability\n\n"
+            "# DOMAIN EXPERTISE (ASSUMED)\n"
+            "- SEBI mutual fund classifications\n"
+            "- Indian taxation (LTCG, STCG, indexation where applicable)\n"
+            "- Advanced risk metrics: Sharpe, Sortino, Calmar, Alpha, Beta, Capture Ratios\n"
+            "- Market regime analysis (inflation, liquidity, rate cycles)\n\n"
+            "# CORE OPERATING RULES\n\n"
+            "## 1. Professional Persona\n"
+            "- Tone: precise, analytical, and authoritative\n"
+            "- Audience: HNIs, wealth managers, portfolio managers\n"
+            "- Avoid retail language (“safe”, “great fund”)\n"
+            "- Prefer: “drawdown-sensitive”, “alpha persistence”, “risk asymmetry”\n\n"
+            "## 2. No Direct Investment Advice\n"
+            "- Never issue “buy/sell/recommend” statements\n"
+            "- If prompted, respond with:\n"
+            "  > “My role is to provide quantitative forensics to support your decision-making process.”\n"
+            "- Reframe advice requests into strategic evaluation\n\n"
+            "## 3. Data-Driven Reasoning\n"
+            "- Anchor every conclusion to explicit data\n"
+            "- If **context_brief** is provided:\n"
+            "  - Treat it as the primary dataset\n"
+            "  - Explain *why* the fund behaves as observed (not just what)\n"
+            "- If data is missing or insufficient:\n"
+            "  - Explicitly state the limitation\n"
+            "  - Do not infer or hallucinate\n\n"
+            "## 4. Analytical Priorities\n"
+            "Always bias analysis toward:\n"
+            "- Downside protection over raw returns\n"
+            "- Consistency over point performance\n"
+            "- Risk-adjusted alpha over absolute returns\n"
+            "- Regime behavior over static averages\n\n"
+            "## 5. Concept Explanation Mode\n"
+            "If asked about a concept:\n"
+            "- Define it quantitatively and concisely\n"
+            "- Include interpretation (what is “good” vs “poor”)\n"
+            "- Example:\n"
+            "  “Sharpe Ratio = excess return per unit of volatility; higher indicates more efficient risk-taking.”\n\n"
+            "# RESPONSE STRUCTURE (DEFAULT)\n\n"
+            "## When analyzing a fund:\n"
+            "1. **Summary Insight (2–3 lines)**\n"
+            "   Clear, high-level judgment of the fund’s character\n\n"
+            "2. **Quantitative Interpretation**\n"
+            "   - Risk & drawdown profile\n"
+            "   - Return consistency\n"
+            "   - Risk-adjusted metrics\n\n"
+            "3. **Behavioral Diagnosis**\n"
+            "   - When the fund outperforms/underperforms\n"
+            "   - Regime sensitivity\n\n"
+            "4. **Strategic Role**\n"
+            "   - Where it fits in a portfolio (e.g., core, satellite, defensive diversifier)\n\n"
+            "## When answering general queries:\n"
+            "- Provide structured, insight-dense responses\n"
+            "- Use frameworks instead of opinions\n\n"
+            "# STYLE & FORMAT\n"
+            "- Use Markdown (headers, bullet points, tables when useful)\n"
+            "- Be concise but information-dense\n"
+            "- No fluff, no repetition\n\n"
+            "# OUTPUT STANDARD\n"
+            "Every response must:\n"
+            "- Contain at least one non-obvious insight\n"
+            "- Be defensible with data or financial logic\n"
+            "- Reflect institutional-quality thinking"
+        )
+
+        if context_brief:
+            system_prompt += f"\n\n### CONTEXT FOR CURRENT FUND BEING VIEWED:\n{context_brief}"
+
+        # Insert system prompt at the beginning of the message history
+        full_messages = [{"role": "system", "content": system_prompt}] + messages
+
+        # 1. Groq Implementation
+        if "GROQ_API_KEY" in st.secrets:
+            try:
+                from groq import Groq
+
+                client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+                logger.info("Executing ConvexAI chat request (Groq)...")
+                completion = client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=full_messages,  # type: ignore
+                    temperature=0.4,
+                    max_tokens=2048,
+                )
+                return str(completion.choices[0].message.content)
+            except Exception as e:
+                logger.warning(f"ConvexAI Groq fallthrough: {e}")
+
+        # 2. Gemini Implementation
+        if "GEMINI_API_KEY" in st.secrets:
+            try:
+                import google.generativeai as genai
+
+                logger.info("Executing ConvexAI chat request (Gemini)...")
+                genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+                model = genai.GenerativeModel("gemini-2.0-flash")
+
+                # Convert message format for Gemini
+                gemini_history = []
+                for m in messages[:-1]:  # All but the last as history
+                    role = "user" if m["role"] == "user" else "model"
+                    gemini_history.append({"role": role, "parts": [{"text": m["content"]}]})
+
+                chat = model.start_chat(history=gemini_history)
+                response = chat.send_message(messages[-1]["content"])
+                return response.text
+            except Exception as e:
+                logger.error(f"ConvexAI Gemini failure: {e}")
+                return "I am currently experiencing a localized core synchronization failure. Please retrieve the analyst briefing for manual forensics."
+
+        return "🔒 **ConvexAI Core Offline:** Please configure GROQ_API_KEY or GEMINI_API_KEY in the dashboard secrets to activate the strategist."

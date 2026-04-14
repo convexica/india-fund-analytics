@@ -8,7 +8,8 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import requests
 import streamlit as st
-from core.logger import get_logger, log_event
+
+from .logger import get_logger, log_event
 
 # Setup professional logger
 logger = get_logger(__name__)
